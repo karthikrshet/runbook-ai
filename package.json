@@ -1,33 +1,36 @@
 {
   "name": "runbook-ai",
-  "version": "0.1.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "eslint .",
-    "format:check": "prettier --check .",
-    "dev": "tsx src/index.ts"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
+  "private": true,
   "type": "module",
-  "dependencies": {
-    "zod": "^4.6.5"
+  "description": "Evidence-gated autonomous operations on TrueForge.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @runbook-ai/dashboard",
+    "dev:fixture": "npm run dev:fixture -w @runbook-ai/dashboard",
+    "build": "npm run build -w @runbook-ai/dashboard",
+    "start": "npm run start -w @runbook-ai/dashboard",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.6.3",
+    "@types/node": "^22.19.0",
     "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
     "prettier": "^3.9.9",
-    "tsx": "^4.23.15",
-    "typescript": "^6.0.3",
+    "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.1",
     "vitest": "^5.0.2"
-  },
-  "private": true
+  }
 }

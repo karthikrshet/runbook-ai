@@ -1,0 +1,16 @@
+{
+  "name": "@runbook-ai/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RunbookAI domain contracts, deterministic action policy and security helpers.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}

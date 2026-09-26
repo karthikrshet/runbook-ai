@@ -1,7 +1,7 @@
 # Checkout API Incident Runbook
 
 1. Check service health.
-2. Read errors from the last 15 minutes.
+2. Read errors from last 15 minutes.
 3. Compare current deployment with previous deployment.
 4. Inspect recent source changes.
 5. Reproduce suspected failure safely.

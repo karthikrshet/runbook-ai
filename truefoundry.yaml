@@ -1,0 +1,87 @@
+# TrueFoundry service for the RunbookAI operator console (the dashboard).
+# Replace every <placeholder>, then deploy from the repository root:
+#   pip install -U truefoundry
+#   tfy login --host https://<your-org>.truefoundry.cloud
+#   tfy deploy -f truefoundry.yaml -w <cluster>:<workspace>
+# TRUEFOUNDRY.md covers the UI (Git) flow, going live with TrueForge, and checks.
+name: runbook-dashboard
+type: service
+image:
+  type: build
+  build_source:
+    type: local
+    project_root_path: ./
+  build_spec:
+    type: dockerfile
+    dockerfile_path: ./Dockerfile
+    build_context_path: ./
+ports:
+  - port: 8791
+    protocol: TCP
+    expose: true
+    app_protocol: http
+    # A host under a domain configured on your cluster; the TrueFoundry UI suggests one.
+    host: runbook-dashboard-<workspace>-8791.<your-base-domain>
+    # Path-based routing works too: TrueFoundry strips the prefix and the console
+    # uses relative URLs. Open it with the trailing slash (https://<domain>/runbook/).
+    # host: <your-base-domain>
+    # path: /runbook/
+    auth:
+      # The console can approve actions in TrueForge: never expose it without a login.
+      type: truefoundry_oauth
+      bypass_auth_paths:
+        - /api/health
+env:
+  # The public host above, exactly as browsers send it. Other Host headers get 421.
+  DASHBOARD_ALLOWED_HOSTS: runbook-dashboard-<workspace>-8791.<your-base-domain>
+  # fixture: the labelled synthetic replay, so the console works before TrueForge is
+  # wired up. Set to trueforge to read a live TrueForge server (TRUEFOUNDRY.md).
+  DASHBOARD_SOURCE: fixture
+  DASHBOARD_ENVIRONMENT: Controlled demo
+  TRUEFORGE_BASE_URL: http://trueforge.<workspace>.svc.cluster.local:8790
+  TRUEFORGE_PUBLIC_URL: https://trueforge.<your-base-domain>
+  # TRUEFORGE_TOKEN: tfy-secret://<tenant>:<secret-group>:<key>
+  TRUEFORGE_AGENT_NAME: runbookai
+  RUNBOOKAI_MCP_SERVER_NAME: runbookai
+  GITHUB_MCP_SERVER_NAME: github
+  # Quoted: YAML 1.1 would read a bare on as true.
+  DASHBOARD_DECISIONS: 'on'
+  DASHBOARD_START_RUNS: 'on'
+resources:
+  cpu_request: 0.1
+  cpu_limit: 0.5
+  memory_request: 256
+  memory_limit: 512
+  ephemeral_storage_request: 512
+  ephemeral_storage_limit: 1024
+# One is enough: every replica polls TrueForge itself, so more add load, not capacity.
+replicas: 1
+rollout_strategy:
+  type: rolling_update
+  max_unavailable_percentage: 0
+  max_surge_percentage: 100
+# Probes reach the pod directly, so they use the container path even with path routing.
+startup_probe:
+  config:
+    type: http
+    path: /api/health
+    port: 8791
+  period_seconds: 2
+  timeout_seconds: 2
+  failure_threshold: 30
+readiness_probe:
+  config:
+    type: http
+    path: /api/health
+    port: 8791
+  period_seconds: 10
+  timeout_seconds: 3
+  failure_threshold: 3
+liveness_probe:
+  config:
+    type: http
+    path: /api/health
+    port: 8791
+  period_seconds: 15
+  timeout_seconds: 5
+  failure_threshold: 4

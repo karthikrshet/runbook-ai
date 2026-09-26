@@ -1,0 +1,18 @@
+# What `tfy deploy` leaves out when it uploads this folder for a remote build
+# (gitignore syntax). Without this file it falls back to git's ignore rules, and
+# outside a git repository it would upload everything, including .env.
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+screenshots/
+*.log
+
+# Secrets: configuration comes from the service's environment, never a .env file.
+.env
+.env.*
+!.env.example
+
+.git/
+.vscode/
+.idea/

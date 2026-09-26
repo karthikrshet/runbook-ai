@@ -1,8 +1,21 @@
+# Dependencies and build output
 node_modules/
 dist/
+*.tsbuildinfo
 coverage/
+
+# Secrets: never commit real values. Copy .env.example to .env instead.
 .env
 .env.*
 !.env.example
+
+# Screenshots and scratch output
+screenshots/
 *.log
+
+# OS / editor
 .DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
