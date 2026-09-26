@@ -10,6 +10,7 @@
     "build": "vite build",
     "start": "tsx server/main.ts",
     "start:fixture": "tsx server/main.ts --source=fixture",
+    "start:live": "tsx server/main.ts --source=trueforge --port=8792 --env=Live",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.server.json"
   },
   "dependencies": {

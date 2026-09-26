@@ -14,8 +14,9 @@
   "scripts": {
     "dev": "npm run dev -w @runbook-ai/dashboard",
     "dev:fixture": "npm run dev:fixture -w @runbook-ai/dashboard",
-    "build": "npm run build -w @runbook-ai/dashboard",
+    "build": "npm run build -w @runbook-ai/dashboard && node -e \"const fs = require('fs'); fs.cpSync('apps/dashboard/dist/client', 'dist', {recursive: true});\"",
     "start": "npm run start -w @runbook-ai/dashboard",
+    "start:live": "npm run start:live -w @runbook-ai/dashboard",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
     "format": "prettier --write .",

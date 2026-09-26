@@ -55,4 +55,12 @@ describe('dashboard configuration', () => {
       ]),
     );
   });
+
+  it('allows port and environment overrides from command line flags', () => {
+    const config = loadConfig(['--port=8792', '--env=Live Demo', '--source=trueforge'], {});
+    expect(config.port).toBe(8792);
+    expect(config.environment).toBe('Live Demo');
+    expect(config.source).toBe('trueforge');
+    expect(config.allowedHosts.has('127.0.0.1:8792')).toBe(true);
+  });
 });

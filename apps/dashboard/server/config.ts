@@ -86,11 +86,16 @@ export function loadConfig(argv: readonly string[], env: NodeJS.ProcessEnv): Das
     throw new Error('--fixture-pace must be an integer number of milliseconds (0-60000)');
   }
 
+  const port = Number(flags.get('port') ?? e.DASHBOARD_PORT);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('--port must be an integer between 1 and 65535');
+  }
+
   const allowedHosts = new Set<string>();
   const hostNames = LOOPBACK_HOSTS.includes(e.DASHBOARD_HOST)
     ? LOOPBACK_HOSTS
     : [e.DASHBOARD_HOST, ...LOOPBACK_HOSTS];
-  for (const name of hostNames) allowedHosts.add(hostHeader(name, e.DASHBOARD_PORT));
+  for (const name of hostNames) allowedHosts.add(hostHeader(name, port));
   for (const extra of (e.DASHBOARD_ALLOWED_HOSTS ?? '').split(',')) {
     if (extra.trim()) allowedHosts.add(extra.trim().toLowerCase());
   }
@@ -109,7 +114,7 @@ export function loadConfig(argv: readonly string[], env: NodeJS.ProcessEnv): Das
     },
     connectors: { runbookai: e.RUNBOOKAI_MCP_SERVER_NAME, github: e.GITHUB_MCP_SERVER_NAME },
     host: e.DASHBOARD_HOST,
-    port: e.DASHBOARD_PORT,
+    port,
     pollMs: e.DASHBOARD_POLL_MS,
     allowedHosts,
     agentName: e.TRUEFORGE_AGENT_NAME,
@@ -117,7 +122,7 @@ export function loadConfig(argv: readonly string[], env: NodeJS.ProcessEnv): Das
     startRunsEnabled: source === 'trueforge' && writesAcknowledged && e.DASHBOARD_START_RUNS === 'on',
     runbooksDir:
       e.RUNBOOKAI_RUNBOOKS_DIR ?? fileURLToPath(new URL('../../../runbooks', import.meta.url)),
-    environment: e.DASHBOARD_ENVIRONMENT ?? null,
+    environment: flags.get('env') ?? e.DASHBOARD_ENVIRONMENT ?? null,
   };
 }
 

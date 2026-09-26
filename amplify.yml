@@ -10,7 +10,7 @@ frontend:
         - npm run build
 
   artifacts:
-    baseDirectory: apps/dashboard/dist/client
+    baseDirectory: dist
     files:
       - '**/*'
 
