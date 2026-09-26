@@ -85,6 +85,26 @@ export function buildPreflight(
     },
   ];
 
+  // The permission matrix knows only the RunbookAI and GitHub connectors. Any other tool is
+  // unclassified: the console reports each call as a policy gap, and TrueForge pauses before
+  // it only if the connector requires approval for all its tools.
+  const others = servers.filter(
+    (server) => server.name !== connectors.runbookai && server.name !== connectors.github,
+  );
+  if (others.length > 0) {
+    const unguarded = others.filter((server) => !server.requireApprovalForTools?.includes('@all'));
+    const names = (list: typeof others): string => list.map((server) => server.name).join(', ');
+    checks.push({
+      key: 'unclassified',
+      label: 'Connectors outside the permission matrix',
+      status: unguarded.length > 0 ? 'warn' : 'ok',
+      detail:
+        unguarded.length > 0
+          ? `${names(unguarded)}: RunbookAI's policy does not classify these tools, and TrueForge would run them without asking. Set requireApprovalForTools to ["@all"] on the connector, or detach it.`
+          : `${names(others)}: not classified by RunbookAI's policy, but TrueForge pauses before every tool.`,
+    });
+  }
+
   return {
     agentName,
     agentFound: true,

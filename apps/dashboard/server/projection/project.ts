@@ -20,6 +20,7 @@ import type { TrueForgeApi } from '@truefoundry/trueforge-sdk';
 import type {
   DisplayClass,
   GatedActionView,
+  PauseView,
   Phase,
   RunView,
   SourceInfo,
@@ -97,7 +98,7 @@ export function projectSession(input: ProjectionInput): RunView {
   const found = collectEnvelopes(built);
   const evidence = buildEvidenceView(found.evidence, byId);
   const verification = buildVerificationView(found.verification, byId);
-  const gatedAction = pickGatedAction(built, evidence);
+  const { gated: gatedAction, pending: pendingActions } = pickGatedAction(built, evidence);
   const violations = findViolations(views);
   const phase = derivePhase({
     hasEvents: input.events.length > 0,
@@ -119,7 +120,9 @@ export function projectSession(input: ProjectionInput): RunView {
     violations,
   });
 
-  const timeline = input.events.flatMap(({ event }) => timelineFor(event, byId, collected.threads));
+  const timeline = input.events.flatMap(({ event }) =>
+    timelineFor(event, byId, collected.threads, collected.kinds),
+  );
 
   return {
     source: input.source,
@@ -139,7 +142,9 @@ export function projectSession(input: ProjectionInput): RunView {
     ),
     turn: collected.turn,
     phase,
+    pause: phase === 'paused' ? pauseFor(collected, byId) : null,
     gatedAction,
+    pendingActions,
     evidence,
     gate: buildEvidenceGate(plan, track.lineIndex, evidence),
     verification,
@@ -173,14 +178,22 @@ function collect(events: readonly SessionEventItem[]) {
   const records = new Map<string, CallRecord>();
   const threads = new Map<string, string>();
   const connectors = new Map<string, 'initialized' | 'auth_required'>();
+  /** Event type by id, to tell what a paused turn is waiting on. */
+  const kinds = new Map<string, SessionEvent['type']>();
+  /** Tool calls each tool.response_required event waits on (a question for the user). */
+  const responseRequired = new Map<string, string[]>();
   let firstPrompt: string | null = null;
   let sandbox: { id: string; at: string } | null = null;
   let turn: RunView['turn'] = { status: 'none', message: null, at: null };
+  /** The events the current pause waits on, as event ids. */
+  let pausedOn: string[] = [];
 
   for (const { event } of events) {
+    kinds.set(event.id, event.type);
     switch (event.type) {
       case 'turn.created':
         turn = { status: 'running', message: null, at: event.createdAt };
+        pausedOn = [];
         for (const item of event.input ?? []) {
           if (item.type === 'user.message') {
             firstPrompt ??= messageText(item.content);
@@ -231,9 +244,17 @@ function collect(events: readonly SessionEventItem[]) {
         break;
       case 'turn.update':
         turn = { status: event.state.status, message: null, at: event.createdAt };
+        pausedOn =
+          event.state.status === 'paused'
+            ? event.state.actionRequiredOnEvents.map((ref) => ref.id)
+            : [];
         break;
       case 'turn.done':
         turn = turnFromDone(event.state, event.createdAt);
+        pausedOn =
+          event.state.status === 'done'
+            ? event.state.requiredActions.map((action) => action.id)
+            : [];
         break;
       case 'mcp.initialize':
         for (const server of event.mcpServers) connectors.set(server.name, 'initialized');
@@ -241,11 +262,55 @@ function collect(events: readonly SessionEventItem[]) {
       case 'mcp.auth_required':
         for (const server of event.mcpServers) connectors.set(server.name, 'auth_required');
         break;
+      case 'tool.response_required':
+        responseRequired.set(
+          event.id,
+          event.toolCalls.map((ref) => ref.id),
+        );
+        break;
       default:
         break;
     }
   }
-  return { records, threads, connectors, firstPrompt, sandbox, turn };
+  return {
+    records,
+    threads,
+    connectors,
+    kinds,
+    responseRequired,
+    pausedOn,
+    firstPrompt,
+    sandbox,
+    turn,
+  };
+}
+
+type Collected = ReturnType<typeof collect>;
+
+/**
+ * Why the turn is paused, when it is not an approval (those are awaiting_authorization):
+ * TrueForge pauses for a connector login or for a question the agent put to the user.
+ */
+function pauseFor(
+  collected: Collected,
+  calls: ReadonlyMap<string, ToolCallView>,
+): PauseView | null {
+  if (collected.turn.status !== 'paused') return null;
+  const waiting = collected.pausedOn.map((id) => collected.kinds.get(id));
+  if (waiting.includes('mcp.auth_required')) {
+    const names = [...collected.connectors]
+      .filter(([, state]) => state === 'auth_required')
+      .map(([name]) => name);
+    return { reason: 'connector_auth', detail: names.length > 0 ? names.join(', ') : null };
+  }
+  const question = collected.pausedOn
+    .flatMap((id) => collected.responseRequired.get(id) ?? [])
+    .map((id) => calls.get(id)?.args.find((arg) => arg.key === 'question')?.value)
+    .find((text): text is string => typeof text === 'string');
+  if (waiting.includes('tool.response_required')) {
+    return { reason: 'user_input', detail: question ?? null };
+  }
+  return { reason: 'other', detail: null };
 }
 
 function turnFromDone(state: TrueForgeApi.TurnDoneEventState, at: string): RunView['turn'] {
@@ -411,24 +476,34 @@ function ran(status: ToolCallStatus): boolean {
   return status === 'succeeded' || status === 'failed';
 }
 
-/** The action at the authorization line: the one awaiting a decision, else the latest gated one. */
+/**
+ * The action at the authorization line: the first one TrueForge is holding for a decision,
+ * else the latest one a human decided or that policy gates by its class. A tool outside the
+ * permission matrix that ran with no checkpoint is a policy gap (reported in violations),
+ * never the action at the line, so it cannot displace an approved change.
+ */
 function pickGatedAction(
   built: readonly BuiltCall[],
   evidence: ReturnType<typeof buildEvidenceView>,
-): GatedActionView | null {
-  const candidates = built.filter((b) => isGatedView(b.view) || b.view.approval !== null);
-  const chosen =
-    candidates.find((b) => b.view.status === 'awaiting_approval') ?? candidates.at(-1) ?? null;
-  if (!chosen) return null;
-  const reported =
-    evidence?.blastRadius && evidence.proposedAction.tool === chosen.view.ref.tool
-      ? evidence.blastRadius
-      : null;
-  return {
-    call: chosen.view,
-    blastRadius: reported ?? computeBlastRadius(chosen.policy),
-    blastRadiusSource: reported ? 'runbookai' : 'policy',
+): { gated: GatedActionView | null; pending: GatedActionView[] } {
+  const toGated = (chosen: BuiltCall): GatedActionView => {
+    const reported =
+      evidence?.blastRadius && evidence.proposedAction.tool === chosen.view.ref.tool
+        ? evidence.blastRadius
+        : null;
+    return {
+      call: chosen.view,
+      blastRadius: reported ?? computeBlastRadius(chosen.policy),
+      blastRadiusSource: reported ? 'runbookai' : 'policy',
+    };
   };
+  const pending = built.filter((b) => b.view.status === 'awaiting_approval').map(toGated);
+  const candidates = built.filter(
+    (b) =>
+      b.view.approval !== null || (isGatedView(b.view) && b.view.actionClass !== 'UNCLASSIFIED'),
+  );
+  const latest = candidates.at(-1);
+  return { gated: pending[0] ?? (latest ? toGated(latest) : null), pending };
 }
 
 function toolLabel(view: ToolCallView | undefined): string {
@@ -488,6 +563,8 @@ function derivePhase(input: {
   if (input.calls.some((call) => call.status === 'awaiting_approval'))
     return 'awaiting_authorization';
   if (input.turn.status === 'error' || input.turn.status === 'cancelled') return 'failed';
+  // Paused for a connector login or a question: neither working nor waiting on an approval.
+  if (input.turn.status === 'paused') return 'paused';
   const decision = input.gated?.approval?.decision ?? null;
   if (decision === 'deny' || input.gated?.status === 'denied') return 'rejected';
   if (decision === 'allow') {
@@ -557,6 +634,7 @@ function timelineFor(
   event: SessionEvent,
   calls: ReadonlyMap<string, ToolCallView>,
   threads: ReadonlyMap<string, string>,
+  kinds: ReadonlyMap<string, SessionEvent['type']>,
 ): TimelineEntryView[] {
   const entries: TimelineEntryView[] = [];
   const add: AddEntry = (kind, label, title, detail, tone, toolCallId = null, threadId = null) => {
@@ -657,10 +735,33 @@ function timelineFor(
     case 'sandbox.created':
       add('sandbox.created', 'Sandbox', 'Sandbox created', event.sandboxId, 'neutral');
       break;
-    case 'turn.update':
-      if (event.state.status === 'paused')
+    case 'turn.update': {
+      if (event.state.status !== 'paused') break;
+      // Say what the pause waits on: an approval, a connector login, or an answer.
+      const waiting = event.state.actionRequiredOnEvents.map((ref) => kinds.get(ref.id));
+      if (waiting.includes('tool.approval_required')) {
         add('run.paused', 'Run', 'Paused until a decision is made in TrueForge', null, 'gate');
+      } else if (waiting.includes('mcp.auth_required')) {
+        add(
+          'run.paused',
+          'Run',
+          'Paused until a connector is authorized in TrueForge',
+          null,
+          'caution',
+        );
+      } else if (waiting.includes('tool.response_required')) {
+        add(
+          'run.paused',
+          'Run',
+          "Paused until the agent's question is answered in TrueForge",
+          null,
+          'caution',
+        );
+      } else {
+        add('run.paused', 'Run', 'Paused in TrueForge', null, 'caution');
+      }
       break;
+    }
     case 'turn.done':
       if (event.state.status === 'error')
         add('run.failed', 'Run', 'Run failed', redactText(event.state.message), 'bad');

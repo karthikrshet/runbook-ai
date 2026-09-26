@@ -39,8 +39,14 @@ function sourceText(source: GatedActionView['blastRadiusSource']): string {
  * Blast radius and policy decision for the action at the authorization line. Both are
  * deterministic outputs of RunbookAI's policy; neither is the model's opinion.
  */
-export function BlastRadiusCard({ view }: { view: RunView }) {
-  const gated = view.gatedAction;
+export function BlastRadiusCard({
+  view,
+  gated = view.gatedAction,
+}: {
+  view: RunView;
+  /** The action shown when several wait at once; the view's gated action by default. */
+  gated?: RunView['gatedAction'];
+}) {
   if (!gated) {
     return (
       <section className="panel" id="blast-radius" aria-labelledby="blast-title">

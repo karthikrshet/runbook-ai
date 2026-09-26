@@ -1,4 +1,5 @@
 import type { EvidenceItemView, RunView } from '../../shared/view';
+import { POLICY_DECISION_TEXT } from './console';
 import { headlineFor } from './copy';
 import { CLASS_LABELS, clock, duration, plural, STEP_STATUS_LABELS, toolName } from './format';
 
@@ -22,6 +23,14 @@ export function provenanceText(item: EvidenceItemView): string {
     case 'pending':
       return `Waiting for ${p.toolCallId}`;
   }
+}
+
+/** The evidence gate in one line, as the console shows it. */
+export function gateSummary(view: RunView): string {
+  const { required, ready } = view.gate;
+  if (required.length === 0) return 'No evidence requirements in the runbook';
+  const verified = required.filter((item) => item.status === 'satisfied').length;
+  return `${ready ? 'Ready' : 'Not ready'}: ${String(verified)} of ${String(required.length)} required items verified against TrueForge`;
 }
 
 export function runDuration(view: RunView): string | null {
@@ -68,7 +77,8 @@ export function buildReportMarkdown(view: RunView): string {
   const boundary = view.violations.some((v) => v.severity === 'violation')
     ? 'Crossed without approval (see violations)'
     : 'Held: nothing gated ran without a decision in TrueForge';
-  push(`| Approval boundary | ${boundary} |`, '');
+  push(`| Approval boundary | ${boundary} |`);
+  push(`| Evidence gate | ${cell(gateSummary(view))} |`, '');
 
   if (gated) {
     const call = gated.call;
@@ -81,6 +91,9 @@ export function buildReportMarkdown(view: RunView): string {
     );
     if (call.resultPreview) push(`- Result recorded by TrueForge: \`${call.resultPreview}\``);
     const blast = gated.blastRadius;
+    push(
+      `- Policy decision: **${POLICY_DECISION_TEXT[call.decision].label}** (deterministic, from the permission matrix)`,
+    );
     push(
       `- Blast radius: **${blast.riskClass}** (${gated.blastRadiusSource === 'policy' ? 'computed from the permission matrix' : 'reported by RunbookAI'}); ${blast.reasons.join('; ')}`,
       '',

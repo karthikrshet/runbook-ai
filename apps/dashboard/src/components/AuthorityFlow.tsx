@@ -19,8 +19,8 @@ const STATE_TEXT: Record<StageState, string> = {
   stopped: 'stopped',
 };
 
-function stagesFor(view: RunView): Stage[] {
-  const call = view.gatedAction?.call ?? null;
+function stagesFor(view: RunView, gated: RunView['gatedAction']): Stage[] {
+  const call = gated?.call ?? null;
   if (!call) {
     const working = view.phase === 'acting';
     return [
@@ -46,7 +46,7 @@ function stagesFor(view: RunView): Stage[] {
     ];
   }
 
-  const approval = approvalState(view);
+  const approval = approvalState(view, gated);
   const decision = POLICY_DECISION_TEXT[call.decision].label;
   const human: Stage = { actor: 'Human', verb: 'Authorizes', state: 'pending', note: '' };
   const system: Stage = {
@@ -97,8 +97,14 @@ function stagesFor(view: RunView): Stage[] {
 }
 
 /** Who holds authority at each point: the model proposes, policy classifies, a human authorizes. */
-export function AuthorityFlow({ view }: { view: RunView }) {
-  const stages = stagesFor(view);
+export function AuthorityFlow({
+  view,
+  gated = view.gatedAction,
+}: {
+  view: RunView;
+  gated?: RunView['gatedAction'];
+}) {
+  const stages = stagesFor(view, gated);
   return (
     <ol className="authority" aria-label="Authority flow">
       {stages.map((stage, index) => (

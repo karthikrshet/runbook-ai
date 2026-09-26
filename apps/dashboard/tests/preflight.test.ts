@@ -122,3 +122,39 @@ describe('run requests', () => {
     );
   });
 });
+
+describe('connectors outside the permission matrix', () => {
+  const base = { config: { sandbox: { enabled: true } } };
+  const runbookai = { name: 'runbookai', requireApprovalForTools: ['@all'] };
+
+  it('warns when TrueForge would run an unclassified connector without asking', () => {
+    const view = buildPreflight(
+      'runbookai',
+      agent({ ...base, mcpServers: [runbookai, { name: 'pagerduty' }] }),
+      connectors,
+    );
+    expect(status(view)).toMatchObject({ unclassified: 'warn' });
+    expect(view.checks.find((check) => check.key === 'unclassified')?.detail).toContain(
+      'pagerduty',
+    );
+    expect(view.canStart).toBe(true);
+  });
+
+  it('accepts one that requires approval for all its tools, and adds no check without one', () => {
+    const guarded = buildPreflight(
+      'runbookai',
+      agent({
+        ...base,
+        mcpServers: [runbookai, { name: 'pagerduty', requireApprovalForTools: ['@all'] }],
+      }),
+      connectors,
+    );
+    expect(status(guarded)).toMatchObject({ unclassified: 'ok' });
+    const none = buildPreflight(
+      'runbookai',
+      agent({ ...base, mcpServers: [runbookai] }),
+      connectors,
+    );
+    expect(Object.keys(status(none))).not.toContain('unclassified');
+  });
+});

@@ -7,6 +7,7 @@ import {
   integrationIndicators,
   latestDiff,
   stepCalls,
+  stepEvidenceVerified,
 } from '../src/lib/console.js';
 import { parseUnifiedDiff } from '../src/lib/diff.js';
 import {
@@ -18,6 +19,7 @@ import {
   toolCall,
   toolResponse,
   withResponse,
+  type Item,
 } from './helpers.js';
 
 const live = (view: RunView): RunView => ({
@@ -278,7 +280,8 @@ describe('approval and incident state', () => {
     expect(incidentStatus(awaiting).label).toBe('Awaiting approval');
     const resolved = project(buildInc001Events());
     expect(approvalState(resolved).key).toBe('approval.approved');
-    expect(incidentStatus(resolved).label).toBe('Resolved');
+    // Verification covers the approved change; it does not prove the service recovered.
+    expect(incidentStatus(resolved).label).toBe('Verified');
     expect(approvalState(project([])).key).toBe('approval.none');
   });
 });
@@ -316,5 +319,167 @@ describe('remediation diff', () => {
 
   it('finds nothing in output without a diff', () => {
     expect(parseUnifiedDiff('Tests  12 passed (12)\n--- summary ---\n')).toEqual([]);
+  });
+});
+
+const at = (seconds: number): string =>
+  new Date(Date.parse('2026-09-26T10:00:00.000Z') + seconds * 1000).toISOString();
+
+describe('the action at the approval boundary', () => {
+  it('is never displaced by a later tool outside the permission matrix', () => {
+    const all = buildInc001Events();
+    const view = project([
+      ...all.slice(0, -1),
+      toolCall('2026-09-26T10:44:02.500Z', 'x_slack', mcpTool('slack', 'post_message'), {
+        channel: '#inc',
+      }),
+      toolResponse(
+        '2026-09-26T10:44:02.800Z',
+        'x_slack',
+        JSON.stringify({ ok: true }),
+        'fx_turn_2',
+      ),
+      ...all.slice(-1),
+    ]);
+    expect(view.gatedAction?.call.id).toBe('fx_call_pr');
+    expect(view.phase).toBe('resolved');
+    expect(view.violations.map((violation) => violation.severity)).toEqual(['gap']);
+  });
+
+  it('lists every call TrueForge holds for a decision, the first one shown by default', () => {
+    const view = project([
+      {
+        turnId: 't1',
+        event: {
+          type: 'model.message',
+          id: 'm1',
+          createdAt: at(1),
+          threadId: 'main',
+          toolCalls: [
+            {
+              id: 'c_pr',
+              type: 'function',
+              function: { name: 'github_create_pull_request', arguments: '{}' },
+              toolInfo: mcpTool('runbookai', 'github_create_pull_request'),
+            },
+            {
+              id: 'c_rb',
+              type: 'function',
+              function: { name: 'aws_execute_demo_rollback', arguments: '{}' },
+              toolInfo: mcpTool('runbookai', 'aws_execute_demo_rollback'),
+            },
+          ],
+        },
+      },
+      {
+        turnId: 't1',
+        event: {
+          type: 'tool.approval_required',
+          id: 'a1',
+          createdAt: at(2),
+          threadId: 'main',
+          toolCalls: [
+            { id: 'c_pr', sourceEventId: 'm1' },
+            { id: 'c_rb', sourceEventId: 'm1' },
+          ],
+        },
+      },
+    ]);
+    expect(view.pendingActions.map((entry) => entry.call.id)).toEqual(['c_pr', 'c_rb']);
+    expect(view.gatedAction?.call.id).toBe('c_pr');
+    // The rollback is customer-facing, so policy rates it higher than the pull request.
+    expect(view.pendingActions[1]?.blastRadius.riskClass).toBe('MEDIUM');
+    expect(approvalState(view, view.pendingActions[1]).key).toBe('approval.pending');
+  });
+});
+
+describe('a turn paused for something other than an approval', () => {
+  const started: Item = {
+    turnId: 't1',
+    event: {
+      type: 'turn.created',
+      id: 'p0',
+      createdAt: at(0),
+      turnId: 't1',
+      previousTurnId: null,
+      threadId: null,
+      state: { status: 'running' },
+      input: [{ type: 'user.message', content: 'Investigate INC-9' }],
+    },
+  };
+  const pausedOn = (id: string, seconds: number): Item => ({
+    turnId: 't1',
+    event: {
+      type: 'turn.update',
+      id: `u_${id}`,
+      createdAt: at(seconds),
+      threadId: null,
+      state: { status: 'paused', actionRequiredOnEvents: [{ id }] },
+    },
+  });
+
+  it('says which connector needs authorization', () => {
+    const view = project([
+      started,
+      {
+        turnId: 't1',
+        event: {
+          type: 'mcp.auth_required',
+          id: 'p1',
+          createdAt: at(1),
+          threadId: null,
+          mcpServers: [{ name: 'github', id: 'gh', authUrl: 'https://trueforge.example/oauth' }],
+        },
+      },
+      pausedOn('p1', 2),
+    ]);
+    expect(view.phase).toBe('paused');
+    expect(view.pause).toEqual({ reason: 'connector_auth', detail: 'github' });
+    expect(view.timeline.at(-1)?.title).toBe('Paused until a connector is authorized in TrueForge');
+    expect(incidentStatus(view).label).toBe('Paused');
+  });
+
+  it('says the agent is waiting for an answer, and quotes the question', () => {
+    const view = project([
+      started,
+      toolCall(
+        at(1),
+        'c_ask',
+        { type: 'truefoundry-system', name: 'ask_user_question' },
+        {
+          question: 'Which region should I check?',
+        },
+      ),
+      {
+        turnId: 't1',
+        event: {
+          type: 'tool.response_required',
+          id: 'p3',
+          createdAt: at(2),
+          threadId: 'main',
+          toolCalls: [{ id: 'c_ask', sourceEventId: 'x' }],
+        },
+      },
+      pausedOn('p3', 3),
+    ]);
+    expect(view.pause).toEqual({ reason: 'user_input', detail: 'Which region should I check?' });
+    expect(view.timeline.at(-1)?.title).toBe(
+      "Paused until the agent's question is answered in TrueForge",
+    );
+  });
+});
+
+describe('step evidence counts', () => {
+  it('count only evidence that passed and matches TrueForge', () => {
+    const tampered = evidenceEnvelope((evidence) => ({
+      ...evidence,
+      validation: {
+        ...evidence.validation,
+        unitTests: { status: 'passed', source: { toolCallId: 'fx_call_fix1' } },
+      },
+    }));
+    const view = project(withResponse(awaitingEvents(), 'fx_call_evidence', tampered));
+    expect(stepEvidenceVerified(view, step(view, 7))).toBe(4);
+    expect(stepEvidenceVerified(project(awaitingEvents()), step(view, 7))).toBe(5);
   });
 });

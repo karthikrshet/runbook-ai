@@ -41,7 +41,11 @@ export function incidentStatus(view: RunView): StatusPill {
           }
         : { label: 'Remediating', tone: 'good' };
     case 'resolved':
-      return { label: 'Resolved', tone: 'good' };
+      // RunbookAI verified the approved change; whether the service has recovered is
+      // outside what the verification report proves, so this does not claim "Resolved".
+      return { label: 'Verified', tone: 'good' };
+    case 'paused':
+      return { label: 'Paused', tone: 'caution' };
     case 'rejected':
       return { label: 'Rejected', tone: 'bad' };
     case 'finished':
@@ -200,6 +204,16 @@ export function stepEvidence(view: RunView, item: TrackItemView): EvidenceItemVi
   return item.evidenceKeys.flatMap((key) => items.filter((candidate) => candidate.key === key));
 }
 
+/**
+ * How much of a step's required evidence holds up: claimed passed AND matched by
+ * TrueForge's record of the call it cites. A failed or unchecked item does not count.
+ */
+export function stepEvidenceVerified(view: RunView, item: TrackItemView): number {
+  return stepEvidence(view, item).filter(
+    (entry) => entry.claim === 'passed' && entry.provenance?.status === 'verified',
+  ).length;
+}
+
 /** Where a call ran, in plain words. */
 export function runtimeFor(call: ToolCallView): string {
   if (call.exec) return 'TrueForge sandbox';
@@ -236,9 +250,15 @@ export interface ApprovalState {
   detail: string;
 }
 
-/** The approval boundary's state, from TrueForge's record of the gated call. */
-export function approvalState(view: RunView): ApprovalState {
-  const call = view.gatedAction?.call;
+/**
+ * The approval boundary's state, from TrueForge's record of the gated call. `gated` picks
+ * one of several actions waiting at once; by default it is the view's gated action.
+ */
+export function approvalState(
+  view: RunView,
+  gated: RunView['gatedAction'] = view.gatedAction,
+): ApprovalState {
+  const call = gated?.call;
   if (!call) {
     return {
       key: 'approval.none',

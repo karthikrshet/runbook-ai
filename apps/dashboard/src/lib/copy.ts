@@ -119,6 +119,33 @@ export function headlineFor(
             : `The agent ended its turn after ${plural(external, 'external change')}.`,
         tone: 'neutral',
       };
+    case 'paused': {
+      const pause = view.pause;
+      if (pause?.reason === 'connector_auth') {
+        return {
+          eyebrow: 'Paused in TrueForge',
+          title: 'A connector needs authorization',
+          body: `TrueForge paused the run until ${pause.detail ?? 'a connector'} is authorized. Authorize it in TrueForge; the run then continues on its own.`,
+          tone: 'caution',
+        };
+      }
+      if (pause?.reason === 'user_input') {
+        return {
+          eyebrow: 'Paused in TrueForge',
+          title: 'The agent is waiting for an answer',
+          body: pause.detail
+            ? `The agent asked: “${pause.detail}” Answer it in TrueForge; the run then continues.`
+            : 'The agent asked a question. Answer it in TrueForge; the run then continues.',
+          tone: 'caution',
+        };
+      }
+      return {
+        eyebrow: 'Paused in TrueForge',
+        title: 'The run is paused',
+        body: 'TrueForge paused the run. Open the session in TrueForge to see what it is waiting for.',
+        tone: 'caution',
+      };
+    }
     case 'failed':
       return {
         eyebrow: 'Run stopped',

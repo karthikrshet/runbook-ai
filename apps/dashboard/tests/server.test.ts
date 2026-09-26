@@ -46,6 +46,8 @@ async function startHarness(options: {
   writes: boolean;
   agent?: TrueForgeApi.Agent | null;
   source?: SessionSource;
+  /** TrueForge refuses every write, as when it is unreachable. */
+  failWrites?: boolean;
 }): Promise<Harness> {
   const source = options.source ?? new FixtureSource(0);
   const connectors = { runbookai: 'runbookai', github: 'github' };
@@ -59,6 +61,7 @@ async function startHarness(options: {
   const runs: Harness['runs'] = [];
   const actions: SessionActions = {
     decide: (input) => {
+      if (options.failWrites) return Promise.reject(new Error('connect ECONNREFUSED'));
       decisions.push(input);
       return Promise.resolve({ turnId: 'turn_after_decision' });
     },
@@ -532,6 +535,20 @@ describe('starting runs', () => {
       ).status,
     ).toBe(400);
     expect(h.runs).toEqual([]);
+    await h.close();
+  });
+});
+
+describe('a write TrueForge fails', () => {
+  it('reports the failure as a 502 that says nothing was retried, not an internal error', async () => {
+    const h = await startHarness({ writes: true, failWrites: true });
+    const reply = await postJson(h.port, '/api/sessions/fixture-inc-001-awaiting/decisions', {
+      toolCallId: 'fx_call_pr',
+      decision: 'allow',
+    });
+    expect(reply.status).toBe(502);
+    expect(reply.body).toContain('Nothing was retried');
+    expect(reply.body).not.toContain('Internal error');
     await h.close();
   });
 });

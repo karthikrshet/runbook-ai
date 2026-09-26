@@ -64,7 +64,8 @@ export function Masthead({ view, connection, placeholder }: MastheadProps) {
           <span className="masthead__service">{view.incident.service}</span>
         )}
         {view?.incident.severity && <span className="chip">{view.incident.severity}</span>}
-        <span className="masthead__title">{view?.incident.title ?? placeholder}</span>
+        {/* With a session loaded, the page itself leads with the incident title. */}
+        {!view && <span className="masthead__title">{placeholder}</span>}
       </div>
 
       <div className="masthead__meta">

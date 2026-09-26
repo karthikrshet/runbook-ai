@@ -15,6 +15,9 @@
   --rule: #1f2630;
   --rule-strong: #2f3845;
   --track-off: #2c343f;
+  /* State-bearing outlines (pending nodes, empty evidence cells, form fields): 3:1 or more. */
+  --node-off: #626d7d;
+  --control-border: #626d7d;
   --hatch: rgb(230 233 238 / 0.05);
   --red: #f05a47;
   --red-ink: #ff8b7a;
@@ -54,11 +57,14 @@
   --rule: #c6ccc5;
   --rule-strong: #98a19a;
   --track-off: #b3bbb4;
+  --node-off: #737d75;
+  --control-border: #737d75;
   --hatch: rgb(24 32 29 / 0.07);
   --red: #c62e1c;
   --red-ink: #a3200f;
   --red-wash: #f5ddd6;
-  --amber: #e5a50a;
+  /* Darker than a signal amber so it keeps 3:1 against the light panels. */
+  --amber: #a87900;
   --amber-ink: #7a5200;
   --amber-wash: #f5e9c8;
   --green: #1e8449;
@@ -747,7 +753,7 @@ a.tf-link:hover {
   margin-top: 5px;
   width: 11px;
   height: 11px;
-  border: 2px solid var(--track-off);
+  border: 2px solid var(--node-off);
   background: var(--panel);
 }
 
@@ -1849,14 +1855,6 @@ a.tf-link:hover {
 .sessions__id {
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--ink-3);
-}
-
-.sessions__when {
-  grid-row: 1 / span 2;
-  grid-column: 2;
-  align-self: center;
-  font-size: 13px;
   color: var(--ink-3);
 }
 

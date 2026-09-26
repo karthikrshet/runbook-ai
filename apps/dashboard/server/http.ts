@@ -240,7 +240,12 @@ async function handleWrite(
     const parsed = DecisionSchema.safeParse(body);
     if (!parsed.success)
       throw new HttpError(400, 'Send a toolCallId and a decision of allow or deny.');
-    sendJson(res, 202, await forwardDecision(deps, deps.actions, sessionId, parsed.data));
+    const actions = deps.actions;
+    sendJson(
+      res,
+      202,
+      await viaTrueForge(deps, () => forwardDecision(deps, actions, sessionId, parsed.data)),
+    );
     return;
   }
 
@@ -251,7 +256,26 @@ async function handleWrite(
       `Pick a runbook, an incident id like INC-001, and a description of ${String(DESCRIPTION_MIN)}-${String(DESCRIPTION_MAX)} characters.`,
     );
   }
-  sendJson(res, 201, await startRun(deps, deps.actions, parsed.data, abortOnDisconnect(res)));
+  const actions = deps.actions;
+  const signal = abortOnDisconnect(res);
+  sendJson(res, 201, await viaTrueForge(deps, () => startRun(deps, actions, parsed.data, signal)));
+}
+
+/**
+ * A write's failure in TrueForge is reported as a 502 that says what went wrong, not as
+ * the dashboard's own internal error. Writes are never retried, so the message says so.
+ */
+async function viaTrueForge<T>(deps: HandlerDeps, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    deps.log(`TrueForge write failed: ${error instanceof Error ? error.message : String(error)}`);
+    throw new HttpError(
+      502,
+      `${deps.describeError(error)} Nothing was retried; check TrueForge before trying again.`,
+    );
+  }
 }
 
 /**

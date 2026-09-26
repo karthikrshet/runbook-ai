@@ -110,12 +110,46 @@ function Preflight({ load, onRetry }: { load: Load<PreflightView>; onRetry: () =
   );
 }
 
+/** What pre-flight checks in a live run; demo mode has no TrueForge agent to read. */
+function PreflightPreview() {
+  const checks = [
+    ['Agent', 'The configured agent exists in TrueForge'],
+    ['Sandbox', 'Generated code runs in the TrueForge sandbox, never on the host'],
+    ['Connector', 'The RunbookAI connector is attached to the agent'],
+    ['Approvals', 'TrueForge pauses before every tool RunbookAI’s policy gates'],
+  ] as const;
+  return (
+    <section className="card" aria-labelledby="preflight-title">
+      <div className="card__head">
+        <h2 id="preflight-title" className="label">
+          Pre-flight
+        </h2>
+        <span className="chip chip--demo">Not checked in demo</span>
+      </div>
+      <div className="card__body">
+        <ul className="checks">
+          {checks.map(([label, detail]) => (
+            <li key={label} className="check check--preview">
+              <DashIcon className="check__mark" />
+              <span className="check__label">{label}</span>
+              <span className="check__detail">{detail}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="hint">In a live run, a failed check blocks the start.</p>
+      </div>
+    </section>
+  );
+}
+
 /** Hands an incident to the TrueForge agent. The agent does the work; this only starts it. */
 export function StartRun() {
   const config = useConfig();
   const enabled = config?.startRunsEnabled ?? false;
+  // Demo mode shows the real form as a preview: nothing can be started without TrueForge.
+  const preview = config?.source.kind === 'fixture';
   const [attempt, setAttempt] = useState(0);
-  const runbooks = useLoad<RunbookSummaryView[]>(fetchRunbooks, enabled, 0);
+  const runbooks = useLoad<RunbookSummaryView[]>(fetchRunbooks, enabled || preview, 0);
   const preflight = useLoad<PreflightView>(fetchPreflight, enabled, attempt);
 
   const [runbookId, setRunbookId] = useState('');
@@ -138,15 +172,14 @@ export function StartRun() {
     ? buildRunPrompt({ runbookId: selected.id, incidentId, description })
     : null;
 
-  if (config && !enabled) {
+  if (config && !enabled && !preview) {
     return (
       <main className="state">
         <p className="label">Start a run</p>
         <h1 className="state__title">Starting runs is off here</h1>
         <p className="state__body">
-          {config.source.kind === 'fixture'
-            ? 'This dashboard is replaying a synthetic fixture, so there is no TrueForge to start a run in. Run it against TrueForge with npm run dev.'
-            : 'Start the run in TrueForge’s chat instead, or set DASHBOARD_START_RUNS=on for the dashboard.'}
+          Start the run in TrueForge’s chat instead, or set DASHBOARD_START_RUNS=on for the
+          dashboard.
         </p>
         {config.trueforgeUiUrl && (
           <a className="link-button" href={config.trueforgeUiUrl} target="_blank" rel="noreferrer">
@@ -179,10 +212,17 @@ export function StartRun() {
         <p className="label">Start a run</p>
         <h1 className="state__title">Hand an incident to the agent</h1>
         <p className="state__body">
-          RunbookAI starts a TrueForge session with the <code>{config?.agentName ?? '…'}</code>{' '}
-          agent. Read-only and sandbox steps run on their own; anything that changes an external
-          system stops for your approval.
+          RunbookAI starts a TrueForge session with the{' '}
+          {config?.agentName ? <code>{config.agentName}</code> : 'configured'} agent. Read-only and
+          sandbox steps run on their own; anything that changes an external system stops for your
+          approval.
         </p>
+        {preview && (
+          <p className="callout callout--demo">
+            <strong>UI preview · not connected.</strong> Demo mode has no TrueForge to start a run
+            in. The form and the message the agent would receive are real; starting is disabled.
+          </p>
+        )}
       </header>
 
       <form className="card start__form" onSubmit={submit} noValidate>
@@ -259,9 +299,11 @@ export function StartRun() {
         </div>
         <div className="card__foot">
           <span>
-            {ready
-              ? 'Starts a new session in TrueForge and opens it here.'
-              : 'Resolve the failed pre-flight checks to start a run.'}
+            {preview
+              ? 'Not connected: a live run starts a TrueForge session and opens it here.'
+              : ready
+                ? 'Starts a new session in TrueForge and opens it here.'
+                : 'Resolve the failed pre-flight checks to start a run.'}
           </span>
           <button type="submit" className="button button--approve" disabled={!canSubmit}>
             {submitting ? 'Starting…' : 'Start run in TrueForge'}
@@ -270,12 +312,16 @@ export function StartRun() {
       </form>
 
       <div className="start__side">
-        <Preflight
-          load={preflight}
-          onRetry={() => {
-            setAttempt((n) => n + 1);
-          }}
-        />
+        {preview ? (
+          <PreflightPreview />
+        ) : (
+          <Preflight
+            load={preflight}
+            onRetry={() => {
+              setAttempt((n) => n + 1);
+            }}
+          />
+        )}
         {selected && (
           <section className="card" aria-labelledby="runbook-title">
             <div className="card__head">

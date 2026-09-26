@@ -446,7 +446,6 @@
   border: 1px solid var(--rule-strong);
   border-radius: 10px;
   background: var(--surface);
-  overflow: hidden;
   scroll-margin: 16px;
 }
 
@@ -887,7 +886,8 @@
   flex: 1;
   height: 8px;
   border-radius: 2px;
-  background: var(--track-off);
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--node-off);
 }
 
 .meter__cell--satisfied {
@@ -1441,4 +1441,93 @@
 .step__chip {
   padding: 1px 6px;
   font-size: 9.5px;
+}
+
+/* ---------- approval boundary: decision always in reach ---------- */
+
+.boundary__head {
+  border-radius: 10px 10px 0 0;
+}
+
+.boundary__foot {
+  border-radius: 0 0 10px 10px;
+}
+
+/* While TrueForge holds the call, the decision stays in view as the operator reads the
+   evidence above it. It sticks only while the boundary itself is on screen. */
+.boundary--approval-pending .boundary__foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  box-shadow: 0 -12px 24px -14px rgb(0 0 0 / 0.6);
+}
+
+.pending-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 12px 20px 0;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--red) 45%, var(--rule));
+  border-radius: 8px;
+  background: var(--well);
+  font-size: 13px;
+}
+
+.pending-switch__label {
+  margin-right: 4px;
+  color: var(--ink-2);
+}
+
+.callout--demo {
+  border: 1px dashed var(--amber);
+  background: var(--amber-wash);
+  color: var(--amber-ink);
+}
+
+.check--preview .check__mark {
+  color: var(--ink-3);
+}
+
+/* Form fields need a visible outline (3:1) to be found at all. */
+.field input,
+.field select,
+.field textarea,
+.decide__reason textarea {
+  border-color: var(--control-border);
+}
+
+/* ---------- sessions list ---------- */
+
+.sessions a {
+  padding: 14px 12px;
+  border-radius: 8px;
+}
+
+.sessions a:hover {
+  background: var(--raised);
+}
+
+.sessions__title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sessions__open {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.sessions a:hover .sessions__open,
+.sessions a:focus-visible .sessions__open {
+  color: var(--accent);
 }

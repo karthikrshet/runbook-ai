@@ -1,5 +1,5 @@
 import type { BlastRadius } from '@runbook-ai/core';
-import type { RunView, ToolCallView, TrackItemView } from '../../shared/view';
+import type { GatedActionView, RunView, ToolCallView, TrackItemView } from '../../shared/view';
 import { useConfig } from '../lib/config';
 import {
   approvalState,
@@ -141,18 +141,29 @@ function PreviewDecision() {
   );
 }
 
+interface ApprovalBoundaryProps {
+  view: RunView;
+  /** The action shown when several wait at once; the view's gated action by default. */
+  gated?: GatedActionView | null;
+  onChoose?: (toolCallId: string) => void;
+}
+
 /**
  * The approval boundary. Before it the agent works on its own; at it, TrueForge holds
  * the call until a human decides. Approve and Reject here are forwarded to TrueForge's
  * native approval and are never the security boundary themselves.
  */
-export function ApprovalBoundary({ view }: { view: RunView }) {
+export function ApprovalBoundary({
+  view,
+  gated = view.gatedAction,
+  onChoose,
+}: ApprovalBoundaryProps) {
   const config = useConfig();
-  const gated = view.gatedAction;
   if (!gated) return null;
 
   const { call, blastRadius } = gated;
-  const state = approvalState(view);
+  const state = approvalState(view, gated);
+  const waiting = view.pendingActions;
   const heading = HEADINGS[state.key];
   const pending = state.key === 'approval.pending';
   const demo = view.source.kind === 'fixture';
@@ -176,7 +187,13 @@ export function ApprovalBoundary({ view }: { view: RunView }) {
           </h2>
           {pending && (
             <p className="boundary__body">
-              {headlineFor(view, { decisionsEnabled: decisionsEnabled && !demo }).body}
+              {/* Describe the action on screen, which may not be the first one waiting. */}
+              {
+                headlineFor(
+                  { ...view, gatedAction: gated },
+                  { decisionsEnabled: decisionsEnabled && !demo },
+                ).body
+              }
             </p>
           )}
         </div>
@@ -187,7 +204,28 @@ export function ApprovalBoundary({ view }: { view: RunView }) {
         </div>
       </header>
 
-      <AuthorityFlow view={view} />
+      {waiting.length > 1 && (
+        <div className="pending-switch" role="group" aria-label="Actions waiting for a decision">
+          <span className="pending-switch__label">
+            {waiting.length} actions are waiting for a decision. Showing:
+          </span>
+          {waiting.map((entry) => (
+            <button
+              key={entry.call.id}
+              type="button"
+              className="filter"
+              aria-pressed={entry.call.id === call.id}
+              onClick={() => {
+                onChoose?.(entry.call.id);
+              }}
+            >
+              <code>{entry.call.ref.tool}</code>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <AuthorityFlow view={view} gated={gated} />
 
       <div className="boundary__grid">
         <ProposedAction view={view} call={call} />

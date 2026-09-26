@@ -1,5 +1,5 @@
 import type { RunView } from '../../shared/view';
-import { currentCall } from '../lib/console';
+import { currentCall, stepForCall } from '../lib/console';
 import { CallDetail } from './CallDetail';
 
 /**
@@ -8,7 +8,9 @@ import { CallDetail } from './CallDetail';
  */
 export function CurrentOperation({ view }: { view: RunView }) {
   const call = currentCall(view);
-  const active = view.track.items.find((item) => item.status === 'active');
+  // Name a runbook step only when TrueForge's record links this call to it; the track's
+  // current step can be a different one (steps link calls through their evidence).
+  const step = call ? stepForCall(view, call.id) : null;
   const lastRun = view.toolCalls.filter((candidate) => candidate.exec !== null).at(-1);
   const sandboxDown = lastRun?.exec?.infraError ?? null;
   const running = call?.status === 'running';
@@ -19,10 +21,10 @@ export function CurrentOperation({ view }: { view: RunView }) {
         <h2 id="operation-title" className="label">
           {running ? 'Current operation' : 'Latest operation'}
         </h2>
-        {active && (
+        {step && (
           <span className="hint">
-            {active.index !== null ? `Step ${String(active.index)} · ` : ''}
-            {active.title}
+            {step.index !== null ? `Step ${String(step.index)} · ` : ''}
+            {step.title}
           </span>
         )}
       </div>
@@ -35,11 +37,18 @@ export function CurrentOperation({ view }: { view: RunView }) {
           </div>
         )}
         {call ? (
-          <CallDetail
-            call={call}
-            demo={view.source.kind === 'fixture'}
-            outputOpen={running || call.exec !== null}
-          />
+          <>
+            <CallDetail
+              call={call}
+              demo={view.source.kind === 'fixture'}
+              outputOpen={running || call.exec !== null}
+            />
+            {running && call.exec && (
+              <p className="hint">
+                TrueForge records a command&rsquo;s output when it finishes; it appears here then.
+              </p>
+            )}
+          </>
         ) : (
           <p className="empty">
             {view.phase === 'waiting'

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RunView, TrackItemView, TrackStatus } from '../../shared/view';
-import { callsDuration, stepCalls, stepEvidence } from '../lib/console';
+import { callsDuration, stepCalls, stepEvidenceVerified } from '../lib/console';
 import { LINE_STATE_TEXT } from '../lib/copy';
 import { clock, duration, STEP_STATUS_LABELS } from '../lib/format';
 import { ClassChip } from './ClassChip';
@@ -37,12 +37,13 @@ interface StepProps {
 
 function Step({ item, view, selected, onSelect }: StepProps) {
   const ms = callsDuration(stepCalls(view, item));
-  const evidence = stepEvidence(view, item).length;
+  // Counts only evidence that passed and matches TrueForge's record.
+  const evidence = stepEvidenceVerified(view, item);
   const meta = [
     integrationFor(view, item),
     ms === null ? null : duration(ms),
     item.evidenceKeys.length > 0
-      ? `${String(evidence)}/${String(item.evidenceKeys.length)} evidence`
+      ? `${String(evidence)}/${String(item.evidenceKeys.length)} verified`
       : null,
   ].filter((part): part is string => part !== null);
   const approval = item.requiresApproval ? ', needs a human decision' : '';
@@ -89,10 +90,16 @@ function AuthorizationLine({ view }: { view: RunView }) {
   const ref = useRef<HTMLDivElement>(null);
   const decidedAt = view.gatedAction?.call.approval?.decidedAt;
 
-  // When TrueForge stops the run, bring the line into view in its own column.
+  // When TrueForge stops the run, bring the line into view in its own scrolling column.
+  // Scrolling the column (not scrollIntoView) leaves the page and the keyboard's Tab
+  // starting point where they are.
   useEffect(() => {
-    if (lineState === 'at_danger')
-      ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (lineState !== 'at_danger') return;
+    const line = ref.current;
+    const column = line?.closest<HTMLElement>('.console__track');
+    if (!line || !column || column.scrollHeight <= column.clientHeight) return;
+    const below = line.getBoundingClientRect().bottom - column.getBoundingClientRect().bottom;
+    if (below > 0) column.scrollTop += below + 16;
   }, [lineState]);
   const text =
     lineState === 'cleared' && decidedAt

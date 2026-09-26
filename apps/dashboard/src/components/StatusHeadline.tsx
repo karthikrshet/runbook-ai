@@ -19,7 +19,7 @@ export function StatusHeadline({ view }: { view: RunView }) {
 
   return (
     <section className={`headline headline--${copy.tone}`} aria-labelledby="headline-title">
-      <div aria-live="polite">
+      <div>
         <p className="headline__eyebrow">{copy.eyebrow}</p>
         <h2 id="headline-title" className="headline__title">
           {copy.title}

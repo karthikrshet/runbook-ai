@@ -25,8 +25,18 @@ export type Phase =
   | 'resolved'
   | 'finished'
   | 'failed'
+  /** TrueForge paused the turn for something other than an approval; see RunView.pause. */
+  | 'paused'
   /** A gated or forbidden action ran without an approval decision. */
   | 'violated';
+
+/** Why TrueForge paused a turn when no approval is pending. */
+export interface PauseView {
+  /** connector_auth: a connector needs a login; user_input: the agent asked the user something. */
+  reason: 'connector_auth' | 'user_input' | 'other';
+  /** Connector names or the question asked, when TrueForge's record has them. */
+  detail: string | null;
+}
 
 export interface ToolRefView {
   kind: 'mcp' | 'system';
@@ -291,7 +301,11 @@ export interface RunView {
   };
   turn: { status: TurnStatus; message: string | null; at: string | null };
   phase: Phase;
+  /** Set when phase is 'paused'. */
+  pause: PauseView | null;
   gatedAction: GatedActionView | null;
+  /** Every call TrueForge is holding for a decision, oldest first; the first is gatedAction. */
+  pendingActions: GatedActionView[];
   evidence: EvidenceView | null;
   /** Readiness of the evidence the runbook requires; computed from the runbook, not a model. */
   gate: EvidenceGateView;

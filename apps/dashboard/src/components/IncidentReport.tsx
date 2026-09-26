@@ -1,7 +1,8 @@
 import type { RunView } from '../../shared/view';
 import { headlineFor } from '../lib/copy';
 import { CLASS_LABELS, clock, plural, STEP_STATUS_LABELS, toolName } from '../lib/format';
-import { buildReportMarkdown, provenanceText, runDuration } from '../lib/report';
+import { POLICY_DECISION_TEXT } from '../lib/console';
+import { buildReportMarkdown, gateSummary, provenanceText, runDuration } from '../lib/report';
 
 function download(view: RunView): void {
   const blob = new Blob([buildReportMarkdown(view)], { type: 'text/markdown;charset=utf-8' });
@@ -103,6 +104,10 @@ export function IncidentReport({ view }: { view: RunView }) {
             {violated ? 'Crossed without approval' : 'Held: nothing gated ran without a decision'}
           </dd>
         </div>
+        <div>
+          <dt>Evidence gate</dt>
+          <dd>{gateSummary(view)}</dd>
+        </div>
       </dl>
 
       {call && gated && (
@@ -110,7 +115,8 @@ export function IncidentReport({ view }: { view: RunView }) {
           <h2 className="sublabel">Gated action</h2>
           <p>
             <code>{toolName(call.ref)}</code> · {CLASS_LABELS[call.actionClass]} · blast radius{' '}
-            <strong>{gated.blastRadius.riskClass}</strong>
+            <strong>{gated.blastRadius.riskClass}</strong> · policy decision{' '}
+            <strong>{POLICY_DECISION_TEXT[call.decision].label}</strong>
           </p>
           <ul className="report__list">
             {call.args.map((arg) => (

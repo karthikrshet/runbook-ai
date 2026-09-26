@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { DashboardConfigView, SessionSummaryView } from '../../shared/view';
 import { fetchSessions, useNow } from '../lib/api';
 import { plural, since } from '../lib/format';
+import { ArrowIcon } from './Icons';
 
 type Load =
   | { state: 'loading' }
@@ -40,13 +41,14 @@ export function SessionPicker({ config }: { config: DashboardConfigView | null }
       </p>
       <h1 className="state__title">Pick a session to watch</h1>
       <p className="state__body">
-        RunbookAI shows what the agent did on its own, what it proved, and where it stopped for a
-        human. Every decision is recorded in TrueForge.
+        Each session is TrueForge running an incident runbook. RunbookAI shows what the agent did on
+        its own, what it proved, and where it stopped for a human. It acts until acting becomes
+        dangerous; every decision is recorded in TrueForge.
       </p>
-      {config?.startRunsEnabled && (
+      {(config?.startRunsEnabled || fixture) && (
         <p>
           <a className="link-button" href="?view=new">
-            Start a run
+            {fixture ? 'Preview starting a run' : 'Start a run'}
           </a>
         </p>
       )}
@@ -90,11 +92,18 @@ export function SessionPicker({ config }: { config: DashboardConfigView | null }
           {load.sessions.map((session) => (
             <li key={session.id}>
               <a href={`?session=${encodeURIComponent(session.id)}`}>
-                <span className="sessions__title">{session.title ?? 'Untitled session'}</span>
-                <span className="sessions__id">
-                  {session.id} · {plural(session.turns, 'turn')}
+                <span className="sessions__title">
+                  {session.title ?? 'Untitled session'}
+                  {fixture && <span className="chip chip--demo">Demo</span>}
                 </span>
-                <span className="sessions__when">updated {since(session.updatedAt, now)}</span>
+                <span className="sessions__id">
+                  {session.id} · {plural(session.turns, 'turn')} · updated{' '}
+                  {since(session.updatedAt, now)}
+                </span>
+                <span className="sessions__open">
+                  Open console
+                  <ArrowIcon />
+                </span>
               </a>
             </li>
           ))}

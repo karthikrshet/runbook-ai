@@ -11,6 +11,7 @@ import { EvidenceGate } from './components/EvidenceGate';
 import { IncidentReport } from './components/IncidentReport';
 import { IncidentSummary } from './components/IncidentSummary';
 import { Masthead } from './components/Masthead';
+import { PhaseAnnouncer } from './components/PhaseAnnouncer';
 import { Remediation } from './components/Remediation';
 import { RootCause } from './components/RootCause';
 import { RunbookTrack } from './components/RunbookTrack';
@@ -53,6 +54,7 @@ function RunScreen({ sessionId }: { sessionId: string }) {
   const [traced, setTraced] = useState<string | null>(null);
   const [selectedStep, setSelectedStep] = useState<string | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [pendingChoice, setPendingChoice] = useState<string | null>(null);
   const lastPhase = useRef<Phase | null>(null);
   const highlight = useMemo<Highlight>(
     () => ({
@@ -77,6 +79,11 @@ function RunScreen({ sessionId }: { sessionId: string }) {
 
   const stream = { connection, problem };
   const selected = view?.track.items.find((item) => item.key === selectedStep) ?? null;
+  // Several actions can wait at once; the operator picks which one the boundary shows.
+  const focused =
+    view?.pendingActions.find((entry) => entry.call.id === pendingChoice) ??
+    view?.gatedAction ??
+    null;
 
   return (
     <HighlightContext.Provider value={highlight}>
@@ -94,6 +101,7 @@ function RunScreen({ sessionId }: { sessionId: string }) {
           />
         )}
         {view && sourcesOpen && <DataSources view={view} stream={stream} />}
+        {view && <PhaseAnnouncer view={view} />}
         {view && <BoundaryAlerts view={view} />}
         <StreamProblem problem={problem} />
         {view ? (
@@ -113,7 +121,7 @@ function RunScreen({ sessionId }: { sessionId: string }) {
                     }}
                   />
                 ) : view.phase === 'awaiting_authorization' ? (
-                  <ApprovalBoundary view={view} />
+                  <ApprovalBoundary view={view} gated={focused} onChoose={setPendingChoice} />
                 ) : (
                   <>
                     <StatusHeadline view={view} />
@@ -131,7 +139,7 @@ function RunScreen({ sessionId }: { sessionId: string }) {
               </main>
               <aside className="console__aside" aria-label="Evidence and context">
                 <EvidenceGate view={view} />
-                <BlastRadiusCard view={view} />
+                <BlastRadiusCard view={view} gated={focused} />
                 <RootCause view={view} />
                 <RuntimeIdentity view={view} />
               </aside>
