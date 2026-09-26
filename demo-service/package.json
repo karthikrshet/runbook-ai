@@ -1,0 +1,21 @@
+{
+  "name": "@runbook-ai/demo-checkout-api",
+  "version": "1.4.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic demo service for RunbookAI incident INC-001 reproduction.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.2"
+  }
+}
