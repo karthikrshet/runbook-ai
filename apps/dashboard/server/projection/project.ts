@@ -5,11 +5,13 @@ import {
   parseEnvelope,
   redactField,
   redactText,
+  RISK_CLASSES,
   SANDBOX_EXEC_TOOL,
   scanUntrustedContent,
   type ConnectorNames,
   type EvidencePackage,
   type Incident,
+  type RiskClass,
   type RunbookAiEnvelope,
   type RunbookPlan,
   type StepStatus,
@@ -17,21 +19,22 @@ import {
   type VerificationReport,
 } from '@runbook-ai/core';
 import type { TrueForgeApi } from '@truefoundry/trueforge-sdk';
-import type {
-  DisplayClass,
-  GatedActionView,
-  PauseView,
-  Phase,
-  RunView,
-  SourceInfo,
-  TimelineEntryView,
-  TimelineKind,
-  TimelineTone,
-  ToolCallStatus,
-  ToolCallView,
-  ToolRefView,
-  VerificationView,
-  ViolationView,
+import {
+  isProposedAction,
+  type DisplayClass,
+  type GatedActionView,
+  type PauseView,
+  type Phase,
+  type RunView,
+  type SourceInfo,
+  type TimelineEntryView,
+  type TimelineKind,
+  type TimelineTone,
+  type ToolCallStatus,
+  type ToolCallView,
+  type ToolRefView,
+  type VerificationView,
+  type ViolationView,
 } from '../../shared/view.js';
 import type { SessionEvent, SessionEventItem, SessionMeta } from '../sources/types.js';
 import {
@@ -121,7 +124,7 @@ export function projectSession(input: ProjectionInput): RunView {
   });
 
   const timeline = input.events.flatMap(({ event }) =>
-    timelineFor(event, byId, collected.threads, collected.kinds),
+    timelineFor(event, byId, collected.threads, collected.kinds, collected.announcedPauses),
   );
 
   return {
@@ -142,7 +145,7 @@ export function projectSession(input: ProjectionInput): RunView {
     ),
     turn: collected.turn,
     phase,
-    pause: phase === 'paused' ? pauseFor(collected, byId) : null,
+    pause: pauseFor(collected, byId, phase),
     gatedAction,
     pendingActions,
     evidence,
@@ -163,7 +166,10 @@ export function projectSession(input: ProjectionInput): RunView {
       toolCalls: views.length,
       automatic: views.filter((v) => v.decision === 'auto' || v.decision === 'auto_in_sandbox')
         .length,
-      gatedExecuted: views.filter((v) => isGatedView(v) && ran(v.status)).length,
+      // An unclassified call is a policy gap of unknown effect, not a known external change.
+      gatedExecuted: views.filter(
+        (v) => isGatedView(v) && v.actionClass !== 'UNCLASSIFIED' && ran(v.status),
+      ).length,
       untrustedFlags: views.reduce((sum, v) => sum + v.untrusted.length, 0),
     },
     startedAt: input.events[0]?.event.createdAt ?? null,
@@ -187,6 +193,8 @@ function collect(events: readonly SessionEventItem[]) {
   let turn: RunView['turn'] = { status: 'none', message: null, at: null };
   /** The events the current pause waits on, as event ids. */
   let pausedOn: string[] = [];
+  /** Events a paused turn.update already announced, so turn.done does not repeat it. */
+  const announcedPauses = new Set<string>();
 
   for (const { event } of events) {
     kinds.set(event.id, event.type);
@@ -248,6 +256,7 @@ function collect(events: readonly SessionEventItem[]) {
           event.state.status === 'paused'
             ? event.state.actionRequiredOnEvents.map((ref) => ref.id)
             : [];
+        for (const id of pausedOn) announcedPauses.add(id);
         break;
       case 'turn.done':
         turn = turnFromDone(event.state, event.createdAt);
@@ -279,6 +288,7 @@ function collect(events: readonly SessionEventItem[]) {
     kinds,
     responseRequired,
     pausedOn,
+    announcedPauses,
     firstPrompt,
     sandbox,
     turn,
@@ -288,12 +298,14 @@ function collect(events: readonly SessionEventItem[]) {
 type Collected = ReturnType<typeof collect>;
 
 /**
- * Why the turn is paused, when it is not an approval (those are awaiting_authorization):
- * TrueForge pauses for a connector login or for a question the agent put to the user.
+ * What a paused turn waits on besides approvals (those are awaiting_authorization):
+ * a connector login or a question the agent put to the user. One pause can hold an
+ * approval and a login together, so this is not limited to the 'paused' phase.
  */
 function pauseFor(
   collected: Collected,
   calls: ReadonlyMap<string, ToolCallView>,
+  phase: Phase,
 ): PauseView | null {
   if (collected.turn.status !== 'paused') return null;
   const waiting = collected.pausedOn.map((id) => collected.kinds.get(id));
@@ -310,7 +322,8 @@ function pauseFor(
   if (waiting.includes('tool.response_required')) {
     return { reason: 'user_input', detail: question ?? null };
   }
-  return { reason: 'other', detail: null };
+  // Anything else is either the pending approval, which the phase already says, or unknown.
+  return phase === 'paused' ? { reason: 'other', detail: null } : null;
 }
 
 function turnFromDone(state: TrueForgeApi.TurnDoneEventState, at: string): RunView['turn'] {
@@ -487,14 +500,15 @@ function pickGatedAction(
   evidence: ReturnType<typeof buildEvidenceView>,
 ): { gated: GatedActionView | null; pending: GatedActionView[] } {
   const toGated = (chosen: BuiltCall): GatedActionView => {
-    const reported =
-      evidence?.blastRadius && evidence.proposedAction.tool === chosen.view.ref.tool
-        ? evidence.blastRadius
-        : null;
+    const computed = computeBlastRadius(chosen.policy);
+    const reported = isProposedAction(evidence, chosen.view) ? evidence.blastRadius : null;
+    // RunbookAI's figure may raise the risk policy computed, never lower it.
+    const useReported =
+      reported !== null && riskRank(reported.riskClass) >= riskRank(computed.riskClass);
     return {
       call: chosen.view,
-      blastRadius: reported ?? computeBlastRadius(chosen.policy),
-      blastRadiusSource: reported ? 'runbookai' : 'policy',
+      blastRadius: useReported ? reported : computed,
+      blastRadiusSource: useReported ? 'runbookai' : 'policy',
     };
   };
   const pending = built.filter((b) => b.view.status === 'awaiting_approval').map(toGated);
@@ -504,6 +518,10 @@ function pickGatedAction(
   );
   const latest = candidates.at(-1);
   return { gated: pending[0] ?? (latest ? toGated(latest) : null), pending };
+}
+
+function riskRank(risk: RiskClass): number {
+  return RISK_CLASSES.indexOf(risk);
 }
 
 function toolLabel(view: ToolCallView | undefined): string {
@@ -630,11 +648,34 @@ type AddEntry = (
   threadId?: string | null,
 ) => void;
 
+/** What each kind of required action waits on, in the order a pause names them. */
+const PAUSE_WAITS: [SessionEvent['type'], string][] = [
+  ['tool.approval_required', 'a decision is made'],
+  ['mcp.auth_required', 'a connector is authorized'],
+  ['tool.response_required', "the agent's question is answered"],
+];
+
+/** The timeline entry for a paused turn, naming everything it waits on. */
+function pauseEntry(waiting: readonly (SessionEvent['type'] | undefined)[]): {
+  title: string;
+  tone: TimelineTone;
+} {
+  const parts = PAUSE_WAITS.filter(([type]) => waiting.includes(type)).map(([, text]) => text);
+  const last = parts.pop();
+  if (last === undefined) return { title: 'Paused in TrueForge', tone: 'caution' };
+  const list = parts.length > 0 ? `${parts.join(', ')} and ${last}` : last;
+  return {
+    title: `Paused until ${list} in TrueForge`,
+    tone: waiting.includes('tool.approval_required') ? 'gate' : 'caution',
+  };
+}
+
 function timelineFor(
   event: SessionEvent,
   calls: ReadonlyMap<string, ToolCallView>,
   threads: ReadonlyMap<string, string>,
   kinds: ReadonlyMap<string, SessionEvent['type']>,
+  announcedPauses: ReadonlySet<string>,
 ): TimelineEntryView[] {
   const entries: TimelineEntryView[] = [];
   const add: AddEntry = (kind, label, title, detail, tone, toolCallId = null, threadId = null) => {
@@ -737,29 +778,11 @@ function timelineFor(
       break;
     case 'turn.update': {
       if (event.state.status !== 'paused') break;
-      // Say what the pause waits on: an approval, a connector login, or an answer.
-      const waiting = event.state.actionRequiredOnEvents.map((ref) => kinds.get(ref.id));
-      if (waiting.includes('tool.approval_required')) {
-        add('run.paused', 'Run', 'Paused until a decision is made in TrueForge', null, 'gate');
-      } else if (waiting.includes('mcp.auth_required')) {
-        add(
-          'run.paused',
-          'Run',
-          'Paused until a connector is authorized in TrueForge',
-          null,
-          'caution',
-        );
-      } else if (waiting.includes('tool.response_required')) {
-        add(
-          'run.paused',
-          'Run',
-          "Paused until the agent's question is answered in TrueForge",
-          null,
-          'caution',
-        );
-      } else {
-        add('run.paused', 'Run', 'Paused in TrueForge', null, 'caution');
-      }
+      // Say what the pause waits on: an approval, a connector login, an answer, or several.
+      const { title, tone } = pauseEntry(
+        event.state.actionRequiredOnEvents.map((ref) => kinds.get(ref.id)),
+      );
+      add('run.paused', 'Run', title, null, tone);
       break;
     }
     case 'turn.done':
@@ -769,6 +792,11 @@ function timelineFor(
         add('run.cancelled', 'Run', 'Run cancelled', null, 'bad');
       else if (event.state.requiredActions.length === 0)
         add('run.completed', 'Run', 'Turn finished', null, 'neutral');
+      // TrueForge reports a pause here, in the finished turn's required actions.
+      else if (!event.state.requiredActions.every((action) => announcedPauses.has(action.id))) {
+        const { title, tone } = pauseEntry(event.state.requiredActions.map((a) => a.type));
+        add('run.paused', 'Run', title, null, tone);
+      }
       break;
     case 'mcp.initialize':
       add(
@@ -861,6 +889,19 @@ function responseEntry(view: ToolCallView, add: AddEntry): void {
   }
   if (view.status === 'failed') {
     add('tool.failed', 'Result', `${toolLabel(view)} failed`, view.resultPreview, 'bad', view.id);
+    return;
+  }
+  // Outside the permission matrix and not approved: a policy gap (see findViolations), not a
+  // crossed boundary. An approved one keeps the "ran after approval" entry below.
+  if (view.actionClass === 'UNCLASSIFIED' && view.approval?.decision !== 'allow') {
+    add(
+      'tool.completed',
+      'Result',
+      `${toolLabel(view)} ran; it is not in the permission matrix`,
+      view.resultPreview,
+      'caution',
+      view.id,
+    );
     return;
   }
   if (isGatedView(view)) {

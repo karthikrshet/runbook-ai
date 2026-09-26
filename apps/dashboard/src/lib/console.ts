@@ -184,6 +184,14 @@ function systemIndicator(view: RunView, key: 'github' | 'aws', system: string): 
   };
 }
 
+/**
+ * Calls that ran without asking, other than sandbox commands. The server's automatic
+ * count includes every sandbox command, which the console and the report count apart.
+ */
+export function automaticCallCount(view: RunView): number {
+  return Math.max(view.counts.automatic - view.sandbox.execCallIds.length, 0);
+}
+
 /** The tool calls TrueForge recorded for a step, oldest first. */
 export function stepCalls(view: RunView, item: TrackItemView): ToolCallView[] {
   const ids = new Set(item.toolCallIds);

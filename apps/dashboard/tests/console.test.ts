@@ -9,6 +9,7 @@ import {
   stepCalls,
   stepEvidenceVerified,
 } from '../src/lib/console.js';
+import { announcementFor, awaitingBody, emptyOperationText, headlineFor } from '../src/lib/copy.js';
 import { parseUnifiedDiff } from '../src/lib/diff.js';
 import {
   awaitingEvents,
@@ -346,50 +347,98 @@ describe('the action at the approval boundary', () => {
     expect(view.violations.map((violation) => violation.severity)).toEqual(['gap']);
   });
 
+  /** One model message asks for a pull request and a rollback; TrueForge holds both. */
+  const heldTwo: Item[] = [
+    {
+      turnId: 't1',
+      event: {
+        type: 'model.message',
+        id: 'm1',
+        createdAt: at(1),
+        threadId: 'main',
+        toolCalls: [
+          {
+            id: 'c_pr',
+            type: 'function',
+            function: { name: 'github_create_pull_request', arguments: '{}' },
+            toolInfo: mcpTool('runbookai', 'github_create_pull_request'),
+          },
+          {
+            id: 'c_rb',
+            type: 'function',
+            function: { name: 'aws_execute_demo_rollback', arguments: '{}' },
+            toolInfo: mcpTool('runbookai', 'aws_execute_demo_rollback'),
+          },
+        ],
+      },
+    },
+    {
+      turnId: 't1',
+      event: {
+        type: 'tool.approval_required',
+        id: 'a1',
+        createdAt: at(2),
+        threadId: 'main',
+        toolCalls: [
+          { id: 'c_pr', sourceEventId: 'm1' },
+          { id: 'c_rb', sourceEventId: 'm1' },
+        ],
+      },
+    },
+  ];
+
   it('lists every call TrueForge holds for a decision, the first one shown by default', () => {
-    const view = project([
-      {
-        turnId: 't1',
-        event: {
-          type: 'model.message',
-          id: 'm1',
-          createdAt: at(1),
-          threadId: 'main',
-          toolCalls: [
-            {
-              id: 'c_pr',
-              type: 'function',
-              function: { name: 'github_create_pull_request', arguments: '{}' },
-              toolInfo: mcpTool('runbookai', 'github_create_pull_request'),
-            },
-            {
-              id: 'c_rb',
-              type: 'function',
-              function: { name: 'aws_execute_demo_rollback', arguments: '{}' },
-              toolInfo: mcpTool('runbookai', 'aws_execute_demo_rollback'),
-            },
-          ],
-        },
-      },
-      {
-        turnId: 't1',
-        event: {
-          type: 'tool.approval_required',
-          id: 'a1',
-          createdAt: at(2),
-          threadId: 'main',
-          toolCalls: [
-            { id: 'c_pr', sourceEventId: 'm1' },
-            { id: 'c_rb', sourceEventId: 'm1' },
-          ],
-        },
-      },
-    ]);
+    const view = project(heldTwo);
     expect(view.pendingActions.map((entry) => entry.call.id)).toEqual(['c_pr', 'c_rb']);
     expect(view.gatedAction?.call.id).toBe('c_pr');
     // The rollback is customer-facing, so policy rates it higher than the pull request.
     expect(view.pendingActions[1]?.blastRadius.riskClass).toBe('MEDIUM');
     expect(approvalState(view, view.pendingActions[1]).key).toBe('approval.pending');
+  });
+
+  it('announces every waiting action to screen readers, not only the first', () => {
+    expect(announcementFor(project(heldTwo))).toBe(
+      'Autonomy paused. 2 actions need human authorization: github_create_pull_request (blast radius LOW), aws_execute_demo_rollback (blast radius MEDIUM).',
+    );
+    expect(announcementFor(project(awaitingEvents()))).toBe(
+      'Autonomy paused. Human authorization required for github_create_pull_request.',
+    );
+  });
+
+  it('describes the waiting call on screen, even after an earlier action crossed the boundary', () => {
+    const view = project([
+      toolCall(at(0), 'c_pr0', mcpTool('github', 'create_pull_request'), { repo: 'acme/app' }),
+      toolResponse(at(0.5), 'c_pr0', JSON.stringify({ number: 7 })),
+      ...heldTwo,
+    ]);
+    // The crossed boundary stays on top; the boundary below still explains each waiting call.
+    expect(view.phase).toBe('violated');
+    expect(headlineFor(view).title).toBe('An action ran without approval');
+    const rollback = view.pendingActions[1];
+    expect(rollback?.call.id).toBe('c_rb');
+    const body = awaitingBody(view, rollback?.call ?? null, { decisionsEnabled: true });
+    expect(body).toMatch(/^The agent wants to roll back the demo service\./);
+    expect(body).toContain('1 external change already ran');
+    expect(body).not.toContain('without a decision');
+    // Screen readers hear the crossed boundary first, then the calls still waiting.
+    expect(announcementFor(view)).toBe(
+      'Boundary crossed. An action ran without approval. 2 actions need human authorization: github_create_pull_request (blast radius LOW), aws_execute_demo_rollback (blast radius MEDIUM).',
+    );
+  });
+
+  it('never tells a demo viewer to decide in TrueForge, since a replay has no session', () => {
+    const view = project(awaitingEvents());
+    for (const decisionsEnabled of [false, true]) {
+      const body = headlineFor(view, { decisionsEnabled }).body;
+      expect(body).toMatch(/This is a replay: in a live run, a human approves or rejects it/);
+      expect(body).not.toMatch(/then approve or reject/);
+    }
+    expect(headlineFor(live(view)).body).toMatch(
+      /Review the evidence, then approve or reject it in TrueForge\.$/,
+    );
+    expect(headlineFor(live(view), { decisionsEnabled: true }).body).toMatch(
+      /Review the evidence below, then approve or reject\. TrueForge records the decision/,
+    );
   });
 });
 
@@ -437,6 +486,45 @@ describe('a turn paused for something other than an approval', () => {
     expect(view.pause).toEqual({ reason: 'connector_auth', detail: 'github' });
     expect(view.timeline.at(-1)?.title).toBe('Paused until a connector is authorized in TrueForge');
     expect(incidentStatus(view).label).toBe('Paused');
+    // No call has run yet, and the agent is not working on the task either.
+    expect(view.toolCalls).toEqual([]);
+    expect(emptyOperationText(view.phase)).toBe(
+      'No tool calls yet. TrueForge paused the run before the first one; the notice above says what it is waiting on.',
+    );
+  });
+
+  it('says a turn that ended before any tool call ended, not that the agent is reading', () => {
+    const ended = (state: Extract<Item['event'], { type: 'turn.done' }>['state']): Item => ({
+      turnId: 't1',
+      event: {
+        type: 'turn.done',
+        id: `d_${state.status}`,
+        createdAt: at(1),
+        threadId: null,
+        state,
+      },
+    });
+    const views = [
+      project([
+        started,
+        ended({ status: 'done', completedAt: at(1), output: null, requiredActions: [] }),
+      ]),
+      project([
+        started,
+        ended({ status: 'error', completedAt: at(1), message: 'Model unavailable' }),
+      ]),
+      project([
+        started,
+        ended({ status: 'cancelled', completedAt: at(1), reason: 'client-cancelled' }),
+      ]),
+    ];
+    expect(views.map((view) => view.phase)).toEqual(['finished', 'failed', 'failed']);
+    for (const view of views) {
+      expect(emptyOperationText(view.phase)).toBe('The turn ended without any tool call.');
+    }
+    expect(emptyOperationText(project([started]).phase)).toBe(
+      'No tool calls yet. The agent is reading the task.',
+    );
   });
 
   it('says the agent is waiting for an answer, and quotes the question', () => {

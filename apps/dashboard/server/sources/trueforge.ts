@@ -4,14 +4,18 @@ import {
   TrueForgeTimeoutError,
   type TrueForgeApi,
 } from '@truefoundry/trueforge-sdk';
+import { redactText } from '@runbook-ai/core';
 import type { SessionSummaryView, SourceInfo } from '../../shared/view.js';
 import {
+  RunNotStartedError,
   SessionNotFoundError,
   type SessionActions,
   type SessionEventItem,
   type SessionMeta,
   type SessionSnapshot,
   type SessionSource,
+  type WriteFailure,
+  type WriteOutcome,
 } from './types.js';
 
 const PAGE_SIZE = 100;
@@ -24,7 +28,8 @@ const NO_RETRY = { maxRetries: 0 } as const;
  * Talks to a running TrueForge server through the official SDK. Reads use
  * sessions.list/get/listEvents and agents.list. The two writes, sessions.createTurn
  * with a `user.tool_approval` and sessions.create for a new run, are the same calls
- * TrueForge's own UI makes.
+ * TrueForge's own UI makes. sessions.delete only removes a new run's session again when
+ * TrueForge refused its first turn.
  */
 export class TrueForgeSource implements SessionSource, SessionActions {
   readonly info: SourceInfo;
@@ -113,11 +118,23 @@ export class TrueForgeSource implements SessionSource, SessionActions {
     await this.client.sessions
       .update(sessionId, { title: input.title }, NO_RETRY)
       .catch(() => undefined);
-    await this.client.sessions.createTurn(
-      sessionId,
-      { input: [{ type: 'user.message', content: input.prompt }] },
-      NO_RETRY,
-    );
+    try {
+      await this.client.sessions.createTurn(
+        sessionId,
+        { input: [{ type: 'user.message', content: input.prompt }] },
+        NO_RETRY,
+      );
+    } catch (error) {
+      // A session without its first turn never moves, so it is removed when the turn surely
+      // did not start. When that is unknown it is kept: the agent may be working in it.
+      const removed =
+        (writeOutcome(error) ?? 'unknown') !== 'unknown' &&
+        (await this.client.sessions.delete(sessionId, NO_RETRY).then(
+          () => true,
+          () => false,
+        ));
+      throw new RunNotStartedError(sessionId, removed, error);
+    }
     return { sessionId };
   }
 
@@ -176,23 +193,149 @@ export function mergeLineage(
   return [...cached.slice(0, overlapIndex + 1), ...freshOldestFirst];
 }
 
-/** Turns a failure into a message that says what went wrong and how to fix it. */
-export function describeTrueForgeError(error: unknown, baseUrl: string): string {
-  const unreachable =
-    `Can't reach TrueForge at ${baseUrl}. Start it with "npx @truefoundry/trueforge", ` +
-    'or see the labelled demo replay with DASHBOARD_SOURCE=fixture (npm run dev:fixture). ' +
-    'This view reconnects on its own.';
+/**
+ * Turns a failed read into a message that says what went wrong and how to fix it. Only
+ * the session stream retries on its own; a one-off request's message does not promise it.
+ */
+export function describeTrueForgeError(
+  error: unknown,
+  baseUrl: string,
+  mode: 'stream' | 'request' = 'stream',
+): string {
+  const retrying = mode === 'stream' ? ' This view keeps retrying.' : '';
   if (error instanceof SessionNotFoundError) return `${error.message} in TrueForge at ${baseUrl}.`;
-  if (error instanceof TrueForgeTimeoutError) {
-    return `TrueForge at ${baseUrl} did not answer within 10 s. This view keeps retrying.`;
-  }
+  if (isTimeout(error)) return `TrueForge at ${baseUrl} did not answer within 10 s.${retrying}`;
   if (error instanceof TrueForgeError && error.statusCode !== undefined) {
-    if (error.statusCode === 401 || error.statusCode === 403) {
-      return `TrueForge refused the request (${error.statusCode}). If auth is enabled, set TRUEFORGE_TOKEN for the dashboard.`;
+    if (isAuthStatus(error.statusCode)) {
+      return `TrueForge refused the request (${error.statusCode}).${AUTH_HINT}`;
     }
-    return `TrueForge returned HTTP ${error.statusCode}. This view keeps retrying.`;
+    const said = serverMessage(error.body);
+    return `TrueForge returned HTTP ${error.statusCode}${said ? `: ${said}` : ''}.${retrying}`;
   }
-  return unreachable;
+  return (
+    `Can't reach TrueForge at ${baseUrl}. Start it with "npx @truefoundry/trueforge", ` +
+    'or see the labelled demo replay with DASHBOARD_SOURCE=fixture (npm run dev:fixture).' +
+    (mode === 'stream' ? ' This view reconnects on its own.' : '')
+  );
+}
+
+/**
+ * Explains a failed write by what TrueForge may have recorded. Writes are never retried,
+ * so nothing here promises a retry. Returns null for an error that did not come from
+ * talking to TrueForge; that is the dashboard's own failure.
+ */
+export function describeTrueForgeWriteError(error: unknown, baseUrl: string): WriteFailure | null {
+  const failure = error instanceof RunNotStartedError ? error.cause : error;
+  const outcome = writeOutcome(failure);
+  if (outcome === null) return null;
+  const what = whatFailed(failure, baseUrl);
+  const auth = failure instanceof TrueForgeError && isAuthStatus(failure.statusCode) ? AUTH_HINT : '';
+
+  if (error instanceof RunNotStartedError) {
+    if (error.removed) {
+      return {
+        outcome,
+        message: `${what}, so the run did not start. The empty session TrueForge created for it was removed.${auth}`,
+      };
+    }
+    return {
+      outcome,
+      sessionId: error.sessionId,
+      message:
+        outcome === 'unknown'
+          ? `TrueForge created session ${error.sessionId} but did not confirm that its first turn started: ${what}. The agent may already be working, so open the session before starting another run.`
+          : `${what}, so the run did not start. TrueForge created session ${error.sessionId} for it, which is empty and could not be removed.${auth}`,
+    };
+  }
+  switch (outcome) {
+    case 'not_sent':
+      return {
+        outcome,
+        message: `${what}, so nothing was sent. Check that it is running, then try again.`,
+      };
+    case 'refused':
+      return { outcome, message: `${what}, so nothing was recorded.${auth}` };
+    case 'unknown':
+      return {
+        outcome,
+        message: `${what}. It may or may not have recorded the request, and the dashboard did not retry it. Check TrueForge before trying again.`,
+      };
+  }
+}
+
+const AUTH_HINT = ' If auth is enabled, set TRUEFORGE_TOKEN for the dashboard.';
+
+/** Socket errors raised before a request reached TrueForge, so it cannot have recorded it. */
+const NEVER_SENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+/** What a failed write means for TrueForge's record; null if TrueForge was not involved. */
+function writeOutcome(error: unknown): WriteOutcome | null {
+  if (isTimeout(error)) return 'unknown';
+  if (!(error instanceof TrueForgeError)) return null;
+  if (error.statusCode === undefined) {
+    const code = socketCode(error);
+    return code !== undefined && NEVER_SENT.has(code) ? 'not_sent' : 'unknown';
+  }
+  // A 4xx is a refusal. A 5xx may come after TrueForge recorded the request.
+  return error.statusCode >= 500 ? 'unknown' : 'refused';
+}
+
+/** The failure as a clause, for a write whose outcome writeOutcome() classified. */
+function whatFailed(error: unknown, baseUrl: string): string {
+  if (isTimeout(error)) return `TrueForge at ${baseUrl} did not answer within 10 s`;
+  if (!(error instanceof TrueForgeError) || error.statusCode === undefined) {
+    return writeOutcome(error) === 'not_sent'
+      ? `Can't reach TrueForge at ${baseUrl}`
+      : `The connection to TrueForge at ${baseUrl} broke before it answered`;
+  }
+  const said = serverMessage(error.body);
+  const status = `HTTP ${String(error.statusCode)}${said ? `: ${said}` : ''}`;
+  return error.statusCode >= 500
+    ? `TrueForge failed with ${status}`
+    : `TrueForge refused the request (${status})`;
+}
+
+/**
+ * The SDK's own timeout. On Node 22 it arrives as a plain TrueForgeError whose cause is
+ * the abort reason 'timeout', not as TrueForgeTimeoutError.
+ */
+function isTimeout(error: unknown): boolean {
+  return (
+    error instanceof TrueForgeTimeoutError ||
+    (error instanceof TrueForgeError && error.statusCode === undefined && error.cause === 'timeout')
+  );
+}
+
+function isAuthStatus(status: number | undefined): boolean {
+  return status === 401 || status === 403;
+}
+
+/** The socket error code under the SDK's wrapping (TrueForgeError, then fetch's TypeError). */
+function socketCode(error: unknown): string | undefined {
+  let current = error;
+  for (let depth = 0; depth < 4 && current instanceof Error; depth++) {
+    if ('code' in current && typeof current.code === 'string') return current.code;
+    current = current.cause;
+  }
+  return undefined;
+}
+
+/** TrueForge's own explanation from an error body, redacted and kept short. */
+function serverMessage(body: unknown): string | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const record = body as Record<string, unknown>;
+  const nested = record['error'];
+  const candidates = [
+    typeof nested === 'object' && nested !== null
+      ? (nested as Record<string, unknown>)['message']
+      : nested,
+    record['message'],
+    record['detail'],
+  ];
+  const text = candidates.find((value): value is string => typeof value === 'string');
+  if (!text) return null;
+  const clean = redactText(text).replace(/\s+/g, ' ').trim().replace(/\.$/, '');
+  return clean.length > 200 ? `${clean.slice(0, 199)}…` : clean;
 }
 
 function toMeta(session: TrueForgeApi.Session): SessionMeta {

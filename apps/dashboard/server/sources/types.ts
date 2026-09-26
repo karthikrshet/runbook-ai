@@ -32,7 +32,10 @@ export interface SessionActions {
     decision: 'allow' | 'deny';
     reason: string | undefined;
   }): Promise<{ turnId: string }>;
-  /** Creates a session bound to a named TrueForge agent and starts its first turn. */
+  /**
+   * Creates a session bound to a named TrueForge agent and starts its first turn. Throws
+   * RunNotStartedError when the session was created but the turn failed.
+   */
   startRun(input: {
     agentName: string;
     title: string;
@@ -58,5 +61,37 @@ export class SessionNotFoundError extends Error {
   constructor(sessionId: string) {
     super(`No session with id ${sessionId}`);
     this.name = 'SessionNotFoundError';
+  }
+}
+
+/**
+ * What a failed write means for TrueForge's record: the request never reached it, it
+ * refused the request, or it may have recorded it (check before sending it again).
+ */
+export type WriteOutcome = 'not_sent' | 'refused' | 'unknown';
+
+/** A failed write, explained for the person who asked for it. */
+export interface WriteFailure {
+  message: string;
+  outcome: WriteOutcome;
+  /** A session TrueForge created for a run that did not start, when it is still there. */
+  sessionId?: string;
+}
+
+/**
+ * TrueForge created a session for a run, but its first turn failed. The session is removed
+ * again only when the turn surely did not start; otherwise the agent may be working in it.
+ */
+export class RunNotStartedError extends Error {
+  constructor(
+    readonly sessionId: string,
+    readonly removed: boolean,
+    cause: unknown,
+  ) {
+    super(
+      `TrueForge created session ${sessionId}, but its first turn failed${removed ? '; the session was removed' : ''}`,
+      { cause },
+    );
+    this.name = 'RunNotStartedError';
   }
 }

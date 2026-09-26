@@ -18,7 +18,12 @@ import type { SessionHub } from './hub.js';
 import { buildPreflight } from './preflight.js';
 import { projectSession } from './projection/project.js';
 import { listRunbooks } from './runbooks.js';
-import type { SessionActions, SessionSource } from './sources/types.js';
+import {
+  SessionNotFoundError,
+  type SessionActions,
+  type SessionSource,
+  type WriteFailure,
+} from './sources/types.js';
 
 /** Handles everything that is not /api: the built client, or Vite in development. */
 export type Fallback = (
@@ -45,7 +50,13 @@ export interface HandlerDeps {
   actions: SessionActions | null;
   hub: SessionHub;
   fallback: Fallback;
-  describeError: (error: unknown) => string;
+  /** Explains a failed read. Only the session stream retries on its own, so only it says so. */
+  describeError: (error: unknown, mode?: 'stream' | 'request') => string;
+  /**
+   * Explains a failed write by what TrueForge may have recorded. Writes are never retried.
+   * Null when the error did not come from TrueForge: the dashboard's own failure.
+   */
+  describeWriteError: (error: unknown) => WriteFailure | null;
   log: (message: string) => void;
 }
 
@@ -91,6 +102,8 @@ class HttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** More fields for the response body, such as what TrueForge may have recorded. */
+    readonly extra?: Omit<WriteFailure, 'message'>,
   ) {
     super(message);
   }
@@ -107,7 +120,9 @@ export function createRequestHandler(deps: HandlerDeps) {
   return (req: IncomingMessage, res: ServerResponse): void => {
     handle(deps, req, res).catch((error: unknown) => {
       if (error instanceof HttpError) {
-        if (!res.headersSent) sendJson(res, error.status, { error: error.message });
+        if (!res.headersSent) {
+          sendJson(res, error.status, { error: error.message, ...error.extra });
+        }
         return;
       }
       deps.log(`request failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -180,7 +195,7 @@ async function handle(deps: HandlerDeps, req: IncomingMessage, res: ServerRespon
       try {
         sendJson(res, 200, { sessions: await deps.source.listSessions(signal) });
       } catch (error) {
-        sendJson(res, 502, { error: deps.describeError(error) });
+        sendJson(res, 502, { error: deps.describeError(error, 'request') });
       }
       return;
     }
@@ -195,7 +210,7 @@ async function handle(deps: HandlerDeps, req: IncomingMessage, res: ServerRespon
         const agent = await deps.actions.findAgent(deps.config.agentName, abortOnDisconnect(res));
         sendJson(res, 200, buildPreflight(deps.config.agentName, agent, deps.config.connectors));
       } catch (error) {
-        sendJson(res, 502, { error: deps.describeError(error) });
+        sendJson(res, 502, { error: deps.describeError(error, 'request') });
       }
       return;
     }
@@ -240,12 +255,7 @@ async function handleWrite(
     const parsed = DecisionSchema.safeParse(body);
     if (!parsed.success)
       throw new HttpError(400, 'Send a toolCallId and a decision of allow or deny.');
-    const actions = deps.actions;
-    sendJson(
-      res,
-      202,
-      await viaTrueForge(deps, () => forwardDecision(deps, actions, sessionId, parsed.data)),
-    );
+    sendJson(res, 202, await forwardDecision(deps, deps.actions, sessionId, parsed.data));
     return;
   }
 
@@ -256,25 +266,44 @@ async function handleWrite(
       `Pick a runbook, an incident id like INC-001, and a description of ${String(DESCRIPTION_MIN)}-${String(DESCRIPTION_MAX)} characters.`,
     );
   }
-  const actions = deps.actions;
   const signal = abortOnDisconnect(res);
-  sendJson(res, 201, await viaTrueForge(deps, () => startRun(deps, actions, parsed.data, signal)));
+  sendJson(res, 201, await startRun(deps, deps.actions, parsed.data, signal));
 }
 
 /**
- * A write's failure in TrueForge is reported as a 502 that says what went wrong, not as
- * the dashboard's own internal error. Writes are never retried, so the message says so.
+ * A read a write depends on. If it fails, nothing was sent to TrueForge, so the 502 (or
+ * 404 for a missing session) says that rather than guessing at a write.
  */
-async function viaTrueForge<T>(deps: HandlerDeps, work: () => Promise<T>): Promise<T> {
+async function beforeWrite<T>(
+  deps: HandlerDeps,
+  unsent: string,
+  read: () => Promise<T>,
+): Promise<T> {
   try {
-    return await work();
+    return await read();
   } catch (error) {
-    if (error instanceof HttpError) throw error;
-    deps.log(`TrueForge write failed: ${error instanceof Error ? error.message : String(error)}`);
-    throw new HttpError(
-      502,
-      `${deps.describeError(error)} Nothing was retried; check TrueForge before trying again.`,
+    deps.log(`TrueForge read failed: ${error instanceof Error ? error.message : String(error)}`);
+    const status = error instanceof SessionNotFoundError ? 404 : 502;
+    throw new HttpError(status, `${deps.describeError(error, 'request')} ${unsent}`);
+  }
+}
+
+/**
+ * Sends one write to TrueForge. A failure becomes a 502 that says whether TrueForge may
+ * have recorded it (`outcome`), since the dashboard never retries a write. An error that
+ * did not come from TrueForge stays the dashboard's own internal error.
+ */
+async function viaTrueForge<T>(deps: HandlerDeps, write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    const failure = deps.describeWriteError(error);
+    if (!failure) throw error;
+    deps.log(
+      `TrueForge write failed (${failure.outcome}): ${error instanceof Error ? error.message : String(error)}`,
     );
+    const { message, ...extra } = failure;
+    throw new HttpError(502, message, extra);
   }
 }
 
@@ -288,7 +317,9 @@ async function forwardDecision(
   sessionId: string,
   request: z.infer<typeof DecisionSchema>,
 ): Promise<DecisionResponse> {
-  const snapshot = await deps.source.fetchSnapshot(sessionId, new AbortController().signal);
+  const snapshot = await beforeWrite(deps, 'No decision was sent.', () =>
+    deps.source.fetchSnapshot(sessionId, new AbortController().signal),
+  );
   const view = projectSession({
     source: deps.source.info,
     session: snapshot.session,
@@ -308,13 +339,15 @@ async function forwardDecision(
       `Policy blocks ${call.ref.tool}: it is forbidden, so it cannot be approved. Reject it instead.`,
     );
   }
-  const result = await actions.decide({
-    sessionId,
-    threadId: call.threadId,
-    toolCallId: call.id,
-    decision: request.decision,
-    reason: request.decision === 'deny' ? request.reason || undefined : undefined,
-  });
+  const result = await viaTrueForge(deps, () =>
+    actions.decide({
+      sessionId,
+      threadId: call.threadId,
+      toolCallId: call.id,
+      decision: request.decision,
+      reason: request.decision === 'deny' ? request.reason || undefined : undefined,
+    }),
+  );
   deps.log(
     `decision ${request.decision} sent to TrueForge: session=${sessionId} call=${call.id} tool=${call.ref.tool}`,
   );
@@ -333,19 +366,23 @@ async function startRun(
   if (!runbook) throw new HttpError(400, `There is no runbook named ${request.runbookId}.`);
 
   // The same pre-flight the start screen shows, enforced here as well.
-  const agent = await actions.findAgent(deps.config.agentName, signal);
+  const agent = await beforeWrite(deps, 'No run was started.', () =>
+    actions.findAgent(deps.config.agentName, signal),
+  );
   const preflight = buildPreflight(deps.config.agentName, agent, deps.config.connectors);
   if (!preflight.canStart) {
     const failed = preflight.checks.filter((check) => check.status === 'fail');
     throw new HttpError(409, failed.map((check) => check.detail).join(' '));
   }
 
-  const result = await actions.startRun({
-    agentName: deps.config.agentName,
-    title: `${request.incidentId} · ${runbook.title}`,
-    prompt: buildRunPrompt(request),
-    metadata: { runbookai_incident: request.incidentId, runbookai_runbook: request.runbookId },
-  });
+  const result = await viaTrueForge(deps, () =>
+    actions.startRun({
+      agentName: deps.config.agentName,
+      title: `${request.incidentId} · ${runbook.title}`,
+      prompt: buildRunPrompt(request),
+      metadata: { runbookai_incident: request.incidentId, runbookai_runbook: request.runbookId },
+    }),
+  );
   deps.log(`run started in TrueForge: session=${result.sessionId} incident=${request.incidentId}`);
   return result;
 }

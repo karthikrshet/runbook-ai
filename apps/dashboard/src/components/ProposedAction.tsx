@@ -1,4 +1,4 @@
-import type { RunView, ToolCallView } from '../../shared/view';
+import { isProposedAction, type RunView, type ToolCallView } from '../../shared/view';
 import { clock, DECISION_LABELS, toolName } from '../lib/format';
 
 export function DecisionChip({ call }: { call: ToolCallView }) {
@@ -20,10 +20,10 @@ export function DecisionChip({ call }: { call: ToolCallView }) {
 /** The action at the authorization line: what would run, where, and how to undo it. */
 export function ProposedAction({ view, call }: { view: RunView; call: ToolCallView }) {
   const evidence = view.evidence;
-  const summary =
-    evidence?.proposedAction.tool === call.ref.tool
-      ? evidence.proposedAction.summary
-      : call.policySummary;
+  // The same match the server uses for the reported blast radius, so the two never disagree.
+  const summary = isProposedAction(evidence, call)
+    ? evidence.proposedAction.summary
+    : call.policySummary;
   const ran = call.status === 'succeeded' || call.status === 'failed';
 
   return (

@@ -1,79 +1,98 @@
 /* RunbookAI operator console.
-   Dark first: a near-black slate console with low-contrast rules. One restrained accent
-   marks selection and focus; signal colours are reserved for state: red stops, amber is
-   in progress, green is clear. The light "mimic panel" board is one toggle away. */
+   Dark first: a deep midnight-indigo console with quiet rules and soft elevation. One
+   indigo accent marks selection, focus and the primary action; signal colours are
+   reserved for state: red stops, amber is in progress, green is clear. A clean light
+   theme is one toggle away. */
 
 :root {
   color-scheme: dark;
-  --panel: #0b0e13;
-  --surface: #10141a;
-  --raised: #151a21;
-  --well: #0d1117;
-  --ink: #e6e9ee;
-  --ink-2: #aeb6c2;
-  --ink-3: #8b95a4;
-  --rule: #1f2630;
-  --rule-strong: #2f3845;
-  --track-off: #2c343f;
+  --panel: #080b12;
+  --surface: #0e131d;
+  --raised: #141a26;
+  --well: #0b0f18;
+  --ink: #e8ecf4;
+  --ink-2: #a8b2c6;
+  --ink-3: #8691a8;
+  --rule: #1a2130;
+  --rule-strong: #2a3345;
+  --track-off: #283043;
   /* State-bearing outlines (pending nodes, empty evidence cells, form fields): 3:1 or more. */
-  --node-off: #626d7d;
-  --control-border: #626d7d;
-  --hatch: rgb(230 233 238 / 0.05);
-  --red: #f05a47;
-  --red-ink: #ff8b7a;
-  --red-wash: #2a1512;
-  --amber: #e9b44c;
-  --amber-ink: #f3c877;
-  --amber-wash: #2a2210;
-  --green: #3fbf7f;
-  --green-ink: #7dd8a8;
-  --green-wash: #0f2a1d;
-  --accent: #7aa2ff;
-  --accent-wash: rgb(122 162 255 / 0.12);
-  --focus: #7aa2ff;
-  --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px rgb(0 0 0 / 0.35);
+  --node-off: #5f6b83;
+  --control-border: #5f6b83;
+  --hatch: rgb(232 236 244 / 0.045);
+  --red: #f25a4a;
+  --red-ink: #ff8f80;
+  --red-wash: #2b1316;
+  --amber: #f0b64a;
+  --amber-ink: #f6cd7c;
+  --amber-wash: #2a2111;
+  --green: #36c587;
+  --green-ink: #7ddcb0;
+  --green-wash: #0e2a20;
+  --accent: #8f95ff;
+  --accent-wash: rgb(143 149 255 / 0.13);
+  --focus: #8f95ff;
+  /* The primary action: white text keeps 4.5:1 across the whole gradient. */
+  --primary: #5b61f2;
+  --primary-2: #7a4cf5;
+  --on-primary: #ffffff;
+  /* Two faint light sources behind the page; transparent on paper. */
+  --glow-a: rgb(99 102 241 / 0.16);
+  --glow-b: rgb(56 189 248 / 0.07);
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 10px 30px -14px rgb(0 0 0 / 0.7);
+  --shadow-lift: 0 1px 0 rgb(255 255 255 / 0.06) inset, 0 18px 40px -16px rgb(0 0 0 / 0.8);
+  /* Cast upward by a bar pinned to the bottom of a column. */
+  --shadow-pinned: 0 -12px 24px -14px rgb(0 0 0 / 0.6);
 
   --font-display: 'Archivo Variable', 'Arial Narrow', sans-serif;
   --font-body: 'Atkinson Hyperlegible Next Variable', system-ui, sans-serif;
   --font-mono: 'Atkinson Hyperlegible Mono Variable', ui-monospace, 'Cascadia Mono', monospace;
+  /* Display type width: Archivo runs from 62% (condensed) to 125% (expanded). */
+  --display-stretch: 100%;
 
-  --radius: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
   /* Track geometry: the axis runs through the centre of the 30px node column. */
   --track-pad: 18px;
   --axis: 15px;
 }
 
-/* The original mimic-panel board: a cool grey-green panel with instruments set into it.
-   Also used on paper, so a printed report stays legible. */
+/* A clean, cool light theme with white instrument panels. */
 :root[data-theme='light'] {
   color-scheme: light;
-  --panel: #e3e6e0;
-  --surface: #f4f5f1;
-  --raised: #eef0eb;
-  --well: #eceee8;
-  --ink: #18201d;
-  --ink-2: #4b5651;
-  --ink-3: #59635e;
-  --rule: #c6ccc5;
-  --rule-strong: #98a19a;
-  --track-off: #b3bbb4;
-  --node-off: #737d75;
-  --control-border: #737d75;
-  --hatch: rgb(24 32 29 / 0.07);
-  --red: #c62e1c;
+  --panel: #f3f5fa;
+  --surface: #ffffff;
+  --raised: #f7f8fc;
+  --well: #f0f2f8;
+  --ink: #111827;
+  --ink-2: #465066;
+  --ink-3: #5a6478;
+  --rule: #e1e6ef;
+  --rule-strong: #c5cdda;
+  --track-off: #c5cdda;
+  --node-off: #7a8497;
+  --control-border: #7a8497;
+  --hatch: rgb(17 24 39 / 0.06);
+  --red: #d63a28;
   --red-ink: #a3200f;
-  --red-wash: #f5ddd6;
+  --red-wash: #fde8e4;
   /* Darker than a signal amber so it keeps 3:1 against the light panels. */
   --amber: #a87900;
   --amber-ink: #7a5200;
-  --amber-wash: #f5e9c8;
+  --amber-wash: #fbf0d2;
   --green: #1e8449;
   --green-ink: #13663a;
-  --green-wash: #d8ecdd;
-  --accent: #1f5fd1;
-  --accent-wash: rgb(31 95 209 / 0.1);
-  --focus: #1f5fd1;
-  --shadow: 0 1px 2px rgb(24 32 29 / 0.08);
+  --green-wash: #dcf2e5;
+  --accent: #4f46e5;
+  --accent-wash: rgb(79 70 229 / 0.09);
+  --focus: #4f46e5;
+  --primary: #4f46e5;
+  --primary-2: #6d3ee8;
+  --glow-a: rgb(99 102 241 / 0.1);
+  --glow-b: rgb(56 189 248 / 0.08);
+  --shadow: 0 1px 2px rgb(17 24 39 / 0.05), 0 6px 20px -12px rgb(17 24 39 / 0.18);
+  --shadow-lift: 0 2px 4px rgb(17 24 39 / 0.06), 0 14px 32px -14px rgb(17 24 39 / 0.25);
+  --shadow-pinned: 0 -8px 16px -12px rgb(17 24 39 / 0.22);
 }
 
 *,
@@ -91,6 +110,21 @@ body {
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+html {
+  scrollbar-color: var(--rule-strong) transparent;
+}
+
+body {
+  background:
+    radial-gradient(1100px 520px at 12% -8%, var(--glow-a), transparent 65%),
+    radial-gradient(900px 480px at 100% -4%, var(--glow-b), transparent 60%), var(--panel);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 h1,
@@ -162,6 +196,7 @@ a {
   padding: 2px 7px;
   border: 1px solid var(--rule-strong);
   border-radius: 999px;
+  background: color-mix(in srgb, var(--raised) 70%, transparent);
   font-family: var(--font-display);
   font-weight: 620;
   font-size: 10.5px;
@@ -174,18 +209,21 @@ a {
 
 .chip--forbidden,
 .chip--bad {
-  border-color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 70%, transparent);
+  background: color-mix(in srgb, var(--red-wash) 70%, transparent);
   color: var(--red-ink);
 }
 
 .chip--unclassified,
 .chip--caution {
-  border-color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 70%, transparent);
+  background: color-mix(in srgb, var(--amber-wash) 70%, transparent);
   color: var(--amber-ink);
 }
 
 .chip--good {
-  border-color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 70%, transparent);
+  background: color-mix(in srgb, var(--green-wash) 70%, transparent);
   color: var(--green-ink);
 }
 
@@ -199,32 +237,44 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 16px;
+  padding: 9px 18px;
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background: var(--ink);
-  color: var(--panel);
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  color: var(--on-primary);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.18) inset,
+    0 10px 24px -10px color-mix(in srgb, var(--primary) 80%, transparent);
   font-family: var(--font-display);
   font-weight: 650;
   font-size: 14px;
   letter-spacing: 0.02em;
   text-decoration: none;
+  transition:
+    filter 140ms ease,
+    transform 140ms ease;
 }
 
 .link-button:hover {
-  background: color-mix(in srgb, var(--ink) 86%, var(--panel));
+  filter: brightness(1.1);
+  transform: translateY(-1px);
 }
 
 .link-button--quiet {
-  background: transparent;
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
   color: var(--ink);
   border: 1px solid var(--rule-strong);
+  box-shadow: none;
 }
 
 .link-button--quiet:hover {
-  background: var(--well);
+  filter: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--rule-strong));
+  background: var(--raised);
 }
 
 .link-button--disabled {
+  box-shadow: none;
   background: transparent;
   color: var(--ink-3);
   border: 1px dashed var(--rule-strong);
@@ -251,8 +301,9 @@ a {
   gap: 20px;
   padding: 10px 24px;
   border-bottom: 1px solid var(--rule);
-  min-height: 54px;
-  background: var(--panel);
+  min-height: 56px;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  backdrop-filter: blur(12px) saturate(140%);
 }
 
 .masthead__brand {
@@ -277,9 +328,9 @@ a {
 
 /* Demo data is loud; a live environment is quiet. */
 .env {
-  padding: 2px 8px;
+  padding: 2px 10px;
   border: 1px solid var(--rule-strong);
-  border-radius: 4px;
+  border-radius: 999px;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 11px;
@@ -305,20 +356,22 @@ a {
   align-items: center;
   gap: 10px;
   font-family: var(--font-display);
-  font-stretch: 75%;
-  font-weight: 800;
-  font-size: 22px;
-  letter-spacing: -0.005em;
+  font-stretch: var(--display-stretch);
+  font-weight: 760;
+  font-size: 20px;
+  letter-spacing: -0.02em;
   text-decoration: none;
   white-space: nowrap;
 }
 
 .wordmark__lamp {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--red);
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--red) 55%, black);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--red) 22%, transparent),
+    0 0 14px 1px color-mix(in srgb, var(--red) 60%, transparent);
 }
 
 .masthead__incident {
@@ -369,6 +422,7 @@ a {
 
 .connection--live .connection__dot {
   background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
 }
 
 .connection--retrying .connection__dot,
@@ -465,7 +519,8 @@ a.tf-link:hover {
 
 .console__main {
   grid-area: main;
-  padding: 18px 24px 40px;
+  --main-pad-end: 40px;
+  padding: 18px 24px var(--main-pad-end);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -501,6 +556,12 @@ a.tf-link:hover {
   .console__aside {
     overflow-y: auto;
     scrollbar-gutter: stable;
+  }
+
+  /* Sticky insets are measured inside the scroller's padding, so bottom-sticky content
+     offsets by this to sit flush with the column's edge. The window has no such padding. */
+  .console__main {
+    --sticky-bottom: calc(-1 * var(--main-pad-end));
   }
 }
 
@@ -609,11 +670,11 @@ a.tf-link:hover {
 
 .headline__title {
   font-family: var(--font-display);
-  font-stretch: 87.5%;
-  font-weight: 760;
+  font-stretch: var(--display-stretch);
+  font-weight: 720;
   font-size: clamp(21px, 1.7vw, 26px);
-  line-height: 1.12;
-  letter-spacing: -0.005em;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
   text-wrap: balance;
 }
 
@@ -967,7 +1028,7 @@ a.tf-link:hover {
 
 .authline__label {
   font-family: var(--font-display);
-  font-stretch: 87.5%;
+  font-stretch: var(--display-stretch);
   font-weight: 780;
   font-size: 14px;
   letter-spacing: 0.08em;
@@ -1005,7 +1066,8 @@ a.tf-link:hover {
 .card {
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
   max-width: 64rem;
 }
 
@@ -1037,6 +1099,7 @@ a.tf-link:hover {
   gap: 10px 16px;
   padding: 12px 20px;
   border-top: 1px solid var(--rule);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   background: var(--well);
   font-size: 13.5px;
   color: var(--ink-2);
@@ -1048,11 +1111,15 @@ a.tf-link:hover {
 
 .card--gate {
   border-color: var(--red);
-  box-shadow: inset 0 3px 0 var(--red);
+  box-shadow:
+    inset 0 3px 0 var(--red),
+    var(--shadow);
 }
 
 .card--cleared {
-  box-shadow: inset 0 3px 0 var(--green);
+  box-shadow:
+    inset 0 3px 0 var(--green),
+    var(--shadow);
 }
 
 .sublabel {
@@ -1320,7 +1387,7 @@ a.tf-link:hover {
 
 .risk__class {
   font-family: var(--font-display);
-  font-stretch: 75%;
+  font-stretch: var(--display-stretch);
   font-weight: 800;
   font-size: 30px;
   line-height: 1;
@@ -1401,7 +1468,7 @@ a.tf-link:hover {
 .verdict {
   margin-bottom: 6px;
   font-family: var(--font-display);
-  font-stretch: 87.5%;
+  font-stretch: var(--display-stretch);
   font-weight: 780;
   font-size: 18px;
 }
@@ -1629,7 +1696,8 @@ a.tf-link:hover {
   flex-direction: column;
   min-height: 0;
   border-top: 1px solid var(--rule-strong);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px);
 }
 
 .timeline-head {
@@ -1682,7 +1750,7 @@ a.tf-link:hover {
 
 .entry {
   display: grid;
-  grid-template-columns: 62px 168px 26px 84px minmax(0, 1fr) 26px;
+  grid-template-columns: 62px 180px 26px 84px minmax(0, 1fr) 26px;
   column-gap: 10px;
   align-items: center;
   min-height: 28px;
@@ -1819,10 +1887,17 @@ a.tf-link:hover {
 
 .state__title {
   font-family: var(--font-display);
-  font-stretch: 75%;
-  font-weight: 780;
-  font-size: 36px;
-  line-height: 1.05;
+  font-stretch: var(--display-stretch);
+  font-weight: 740;
+  font-size: clamp(30px, 3.2vw, 40px);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.state > .label,
+.start__intro > .label {
+  color: var(--accent);
 }
 
 .state__body {

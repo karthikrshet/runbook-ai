@@ -7,10 +7,10 @@ import {
   stepForCall,
   type ApprovalState,
 } from '../lib/console';
-import { headlineFor } from '../lib/copy';
+import { awaitingBody } from '../lib/copy';
 import { CLASS_LABELS, clock, plural } from '../lib/format';
 import { AuthorityFlow } from './AuthorityFlow';
-import { DecisionControls } from './DecisionControls';
+import { DecisionControls, DecisionFoot } from './DecisionControls';
 import { EvidenceItems } from './Evidence';
 import { ExternalIcon, PauseIcon } from './Icons';
 import { DecisionChip, ProposedAction } from './ProposedAction';
@@ -123,7 +123,7 @@ function PreviewDecision() {
         <p className="decide__label">
           UI preview <span className="demo-tag">Not connected</span>
         </p>
-        <p>
+        <p className="decide__explain">
           Demo mode replays a fixture, so there is no TrueForge session to decide in. In a live run,
           Approve and Reject are sent to TrueForge’s native tool approval; this console never runs
           the action itself.
@@ -187,13 +187,9 @@ export function ApprovalBoundary({
           </h2>
           {pending && (
             <p className="boundary__body">
-              {/* Describe the action on screen, which may not be the first one waiting. */}
-              {
-                headlineFor(
-                  { ...view, gatedAction: gated },
-                  { decisionsEnabled: decisionsEnabled && !demo },
-                ).body
-              }
+              {/* Describe the action on screen, which may not be the first one waiting, even
+                  when an earlier action crossed the boundary and the run reports that first. */}
+              {awaitingBody(view, call, { decisionsEnabled: decisionsEnabled && !demo })}
             </p>
           )}
         </div>
@@ -204,7 +200,7 @@ export function ApprovalBoundary({
         </div>
       </header>
 
-      {waiting.length > 1 && (
+      {waiting.length > 1 && onChoose && (
         <div className="pending-switch" role="group" aria-label="Actions waiting for a decision">
           <span className="pending-switch__label">
             {waiting.length} actions are waiting for a decision. Showing:
@@ -216,7 +212,7 @@ export function ApprovalBoundary({
               className="filter"
               aria-pressed={entry.call.id === call.id}
               onClick={() => {
-                onChoose?.(entry.call.id);
+                onChoose(entry.call.id);
               }}
             >
               <code>{entry.call.ref.tool}</code>
@@ -247,7 +243,7 @@ export function ApprovalBoundary({
         </section>
       )}
 
-      <footer className="boundary__foot" id="decision">
+      <DecisionFoot pending={pending}>
         {pending && demo ? (
           <PreviewDecision />
         ) : pending && decisionsEnabled ? (
@@ -272,7 +268,7 @@ export function ApprovalBoundary({
             )}
           </div>
         )}
-      </footer>
+      </DecisionFoot>
     </section>
   );
 }

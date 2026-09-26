@@ -3,11 +3,17 @@ import { createServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TrueForgeApi } from '@truefoundry/trueforge-sdk';
+import { TrueForgeError, type TrueForgeApi } from '@truefoundry/trueforge-sdk';
+import { GetSessionResponse } from '@truefoundry/trueforge-sdk/serialization';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createRequestHandler } from '../server/http.js';
 import { SessionHub } from '../server/hub.js';
 import { FixtureSource } from '../server/sources/fixture.js';
+import {
+  describeTrueForgeError,
+  describeTrueForgeWriteError,
+  TrueForgeSource,
+} from '../server/sources/trueforge.js';
 import type { SessionActions, SessionSource } from '../server/sources/types.js';
 import { createStaticHandler } from '../server/static.js';
 import { buildRunPrompt } from '../shared/run-request.js';
@@ -46,8 +52,10 @@ async function startHarness(options: {
   writes: boolean;
   agent?: TrueForgeApi.Agent | null;
   source?: SessionSource;
-  /** TrueForge refuses every write, as when it is unreachable. */
-  failWrites?: boolean;
+  /** Thrown by every write, as TrueForge's SDK would throw it. */
+  writeError?: Error;
+  /** Real writes, e.g. a TrueForgeSource pointed at a local stand-in for TrueForge. */
+  actions?: SessionActions;
 }): Promise<Harness> {
   const source = options.source ?? new FixtureSource(0);
   const connectors = { runbookai: 'runbookai', github: 'github' };
@@ -59,13 +67,14 @@ async function startHarness(options: {
   });
   const decisions: Harness['decisions'] = [];
   const runs: Harness['runs'] = [];
-  const actions: SessionActions = {
+  const actions: SessionActions = options.actions ?? {
     decide: (input) => {
-      if (options.failWrites) return Promise.reject(new Error('connect ECONNREFUSED'));
+      if (options.writeError !== undefined) return Promise.reject(options.writeError);
       decisions.push(input);
       return Promise.resolve({ turnId: 'turn_after_decision' });
     },
     startRun: (input) => {
+      if (options.writeError !== undefined) return Promise.reject(options.writeError);
       runs.push(input);
       return Promise.resolve({ sessionId: 'session_started' });
     },
@@ -97,7 +106,8 @@ async function startHarness(options: {
       actions: options.writes ? actions : null,
       hub,
       fallback: createStaticHandler(join(root, 'client')),
-      describeError: () => 'error',
+      describeError: (e, mode) => describeTrueForgeError(e, 'http://localhost:8790', mode),
+      describeWriteError: (e) => describeTrueForgeWriteError(e, 'http://localhost:8790'),
       log: () => undefined,
     }),
   );
@@ -383,6 +393,18 @@ describe('decisions forwarded to TrueForge', () => {
     expect(h.decisions).toHaveLength(count);
   });
 
+  it('answers 404 for a session TrueForge does not have, and says nothing was sent', async () => {
+    const count = h.decisions.length;
+    const reply = await postJson(h.port, '/api/sessions/no-such-session/decisions', {
+      toolCallId: 'fx_call_pr',
+      decision: 'allow',
+    });
+    expect(reply.status).toBe(404);
+    expect(reply.body).toContain('No decision was sent.');
+    expect(reply.body).not.toContain('retried');
+    expect(h.decisions).toHaveLength(count);
+  });
+
   it.each([
     ['a cross-origin page', { origin: 'http://attacker.example' }, 403],
     ['a cross-site fetch', { 'sec-fetch-site': 'cross-site' }, 403],
@@ -540,15 +562,129 @@ describe('starting runs', () => {
 });
 
 describe('a write TrueForge fails', () => {
-  it('reports the failure as a 502 that says nothing was retried, not an internal error', async () => {
-    const h = await startHarness({ writes: true, failWrites: true });
-    const reply = await postJson(h.port, '/api/sessions/fixture-inc-001-awaiting/decisions', {
+  const decide = (h: Harness) =>
+    postJson(h.port, '/api/sessions/fixture-inc-001-awaiting/decisions', {
       toolCallId: 'fx_call_pr',
       decision: 'allow',
     });
+  // How the SDK reports a request that never connected, and one it stopped waiting for
+  // (on Node 22 its timeout is a plain TrueForgeError whose cause is 'timeout').
+  const unreachable = new TrueForgeError({
+    message: 'fetch failed',
+    cause: new TypeError('fetch failed', {
+      cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+    }),
+  });
+  const timedOut = new TrueForgeError({ message: '"timeout"', cause: 'timeout' });
+
+  it('says nothing was sent when TrueForge cannot be reached', async () => {
+    const h = await startHarness({ writes: true, writeError: unreachable });
+    const reply = await decide(h);
     expect(reply.status).toBe(502);
-    expect(reply.body).toContain('Nothing was retried');
-    expect(reply.body).not.toContain('Internal error');
+    expect(JSON.parse(reply.body)).toEqual({
+      error:
+        "Can't reach TrueForge at http://localhost:8790, so nothing was sent. Check that it is running, then try again.",
+      outcome: 'not_sent',
+    });
     await h.close();
+  });
+
+  it('never tells the user a decision that timed out was not recorded', async () => {
+    const h = await startHarness({ writes: true, writeError: timedOut });
+    const reply = await decide(h);
+    expect(reply.status).toBe(502);
+    const body = JSON.parse(reply.body) as { error: string; outcome: string };
+    expect(body.outcome).toBe('unknown');
+    expect(body.error).toContain('did not answer within 10 s. It may or may not have recorded');
+    expect(body.error).not.toContain("Can't reach");
+    await h.close();
+  });
+
+  it('keeps a failure inside the dashboard an internal error, not a TrueForge one', async () => {
+    const h = await startHarness({ writes: true, writeError: new Error('a dashboard bug') });
+    const reply = await decide(h);
+    expect(reply.status).toBe(500);
+    expect(JSON.parse(reply.body)).toEqual({ error: 'Internal error' });
+    await h.close();
+  });
+});
+
+describe('a run whose first turn TrueForge does not start', () => {
+  // A local stand-in for TrueForge's API, not TrueForge: it creates a session, then answers
+  // the first turn with `turnStatus`.
+  let turnStatus = 400;
+  const seen: string[] = [];
+  const created: TrueForgeApi.Session = {
+    id: 'sess_new',
+    title: null,
+    createdAt: '2026-09-26T10:42:00.000Z',
+    updatedAt: '2026-09-26T10:42:00.000Z',
+    metadata: {},
+    source: null,
+    agent: { type: 'reference', id: 'agent_1', name: 'runbookai' },
+    createdBySubject: readyAgent.createdBySubject,
+    metrics: { totalTurns: 0, totalDurationMs: 0 },
+  };
+  const standIn = createServer((req, res) => {
+    seen.push(`${req.method ?? ''} ${req.url ?? ''}`);
+    req.resume();
+    res.setHeader('content-type', 'application/json');
+    if (req.method === 'DELETE') res.writeHead(204).end();
+    else if (req.url?.endsWith('/turns')) {
+      res.writeHead(turnStatus).end(JSON.stringify({ error: { message: 'Turn refused' } }));
+    } else res.end(JSON.stringify(GetSessionResponse.jsonOrThrow({ data: created })));
+  });
+  let h: Harness;
+  beforeAll(async () => {
+    await new Promise<void>((resolve) => standIn.listen(0, '127.0.0.1', resolve));
+    const baseUrl = `http://127.0.0.1:${String((standIn.address() as AddressInfo).port)}`;
+    const trueforge = new TrueForgeSource({ baseUrl, publicUrl: baseUrl, token: undefined });
+    h = await startHarness({
+      writes: true,
+      actions: {
+        decide: (input) => trueforge.decide(input),
+        startRun: (input) => trueforge.startRun(input),
+        findAgent: () => Promise.resolve(readyAgent),
+      },
+    });
+  });
+  afterAll(async () => {
+    await h.close();
+    standIn.closeAllConnections();
+    await new Promise<void>((resolve) =>
+      standIn.close(() => {
+        resolve();
+      }),
+    );
+  });
+  const start = () =>
+    postJson(h.port, '/api/runs', {
+      runbookId: 'checkout-incident.md',
+      incidentId: 'INC-005',
+      description: 'checkout-api fails for some carts',
+    });
+
+  it('removes the empty session when TrueForge refuses the first turn', async () => {
+    turnStatus = 400;
+    seen.length = 0;
+    const reply = await start();
+    expect(reply.status).toBe(502);
+    const body = JSON.parse(reply.body) as Record<string, unknown>;
+    expect(body).toMatchObject({ outcome: 'refused' });
+    expect(body).not.toHaveProperty('sessionId');
+    expect(body['error']).toContain(
+      'so the run did not start. The empty session TrueForge created for it was removed.',
+    );
+    expect(seen).toContain('DELETE /api/v1/sessions/sess_new');
+  });
+
+  it('keeps the session and returns its id when the first turn may have started', async () => {
+    turnStatus = 503;
+    seen.length = 0;
+    const reply = await start();
+    expect(reply.status).toBe(502);
+    expect(JSON.parse(reply.body)).toMatchObject({ outcome: 'unknown', sessionId: 'sess_new' });
+    expect(reply.body).toContain('open the session before starting another run');
+    expect(seen.filter((line) => line.startsWith('DELETE'))).toEqual([]);
   });
 });

@@ -149,7 +149,9 @@ export function EventLog({ view }: { view: RunView }) {
                 data-highlighted={toolCallId !== null && entry.toolCallId === toolCallId}
               >
                 <time dateTime={entry.at}>{clock(entry.at)}</time>
-                <code className="entry__kind">{entry.kind}</code>
+                <code className="entry__kind" title={entry.kind}>
+                  {entry.kind}
+                </code>
                 <span
                   className="entry__step"
                   title={step ? `Runbook step ${String(step.index ?? '')}` : undefined}

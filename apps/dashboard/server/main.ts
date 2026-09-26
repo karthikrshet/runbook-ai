@@ -7,8 +7,17 @@ import { createRequestHandler, type Fallback } from './http.js';
 import { SessionHub } from './hub.js';
 import { createStaticHandler } from './static.js';
 import { FixtureSource } from './sources/fixture.js';
-import { describeTrueForgeError, TrueForgeSource } from './sources/trueforge.js';
-import { SessionNotFoundError, type SessionActions, type SessionSource } from './sources/types.js';
+import {
+  describeTrueForgeError,
+  describeTrueForgeWriteError,
+  TrueForgeSource,
+} from './sources/trueforge.js';
+import {
+  SessionNotFoundError,
+  type SessionActions,
+  type SessionSource,
+  type WriteFailure,
+} from './sources/types.js';
 
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
 const log = (message: string): void => {
@@ -24,10 +33,17 @@ const source: SessionSource = trueforge ?? new FixtureSource(config.fixturePaceM
 const actions: SessionActions | null =
   trueforge && (config.decisionsEnabled || config.startRunsEnabled) ? trueforge : null;
 
-const describeError = (error: unknown): string => {
-  if (config.source === 'trueforge') return describeTrueForgeError(error, config.trueforge.baseUrl);
+const describeError = (error: unknown, mode: 'stream' | 'request' = 'stream'): string => {
+  if (config.source === 'trueforge') {
+    return describeTrueForgeError(error, config.trueforge.baseUrl, mode);
+  }
   return error instanceof SessionNotFoundError ? error.message : 'The fixture could not be loaded.';
 };
+// A fixture never writes, so only TrueForge has write failures to explain.
+const describeWriteError = (error: unknown): WriteFailure | null =>
+  config.source === 'trueforge'
+    ? describeTrueForgeWriteError(error, config.trueforge.baseUrl)
+    : null;
 
 const hub = new SessionHub({
   source,
@@ -62,7 +78,16 @@ if (config.mode === 'dev') {
 
 server.on(
   'request',
-  createRequestHandler({ config, source, actions, hub, fallback, describeError, log }),
+  createRequestHandler({
+    config,
+    source,
+    actions,
+    hub,
+    fallback,
+    describeError,
+    describeWriteError,
+    log,
+  }),
 );
 server.listen(config.port, config.host, () => {
   const { baseUrl, publicUrl } = config.trueforge;

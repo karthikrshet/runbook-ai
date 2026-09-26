@@ -1,4 +1,5 @@
-import type { RunView, ToolCallView } from '../../shared/view';
+import type { Phase, RunView, ToolCallView } from '../../shared/view';
+import { incidentStatus } from './console';
 import { clock, plural, toolName } from './format';
 
 export type Tone = 'neutral' | 'gate' | 'good' | 'bad' | 'caution';
@@ -37,6 +38,30 @@ function capitalise(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/**
+ * Why the run stopped at a call TrueForge holds for a decision. The approval boundary passes
+ * the call on screen, which may not be the first one waiting, even when the run's phase
+ * reports a crossed boundary first. A fixture replay has no TrueForge session to decide in.
+ */
+export function awaitingBody(
+  view: RunView,
+  call: ToolCallView | null,
+  options: { decisionsEnabled: boolean },
+): string {
+  const external = view.counts.gatedExecuted;
+  return `The agent wants to ${call ? describeAction(call) : 'run the proposed action'}. Everything before this ran on its own; ${
+    external === 0
+      ? 'no external change has run yet'
+      : `${plural(external, 'external change')} already ran`
+  }. ${
+    view.source.kind === 'fixture'
+      ? 'This is a replay: in a live run, a human approves or rejects it in TrueForge.'
+      : options.decisionsEnabled
+        ? 'Review the evidence below, then approve or reject. TrueForge records the decision and resumes the run.'
+        : 'Review the evidence, then approve or reject it in TrueForge.'
+  }`;
+}
+
 export function headlineFor(
   view: RunView,
   options: { decisionsEnabled: boolean } = { decisionsEnabled: false },
@@ -66,15 +91,7 @@ export function headlineFor(
       return {
         eyebrow: 'Stopped at the authorization line',
         title: 'TrueForge paused the run for your decision',
-        body: `The agent wants to ${action}. Everything before this ran on its own; ${
-          external === 0
-            ? 'no external change has run yet'
-            : `${plural(external, 'external change')} already ran`
-        }. ${
-          options.decisionsEnabled
-            ? 'Review the evidence below, then approve or reject. TrueForge records the decision and resumes the run.'
-            : 'Review the evidence, then approve or reject it in TrueForge.'
-        }`,
+        body: awaitingBody(view, call, options),
         tone: 'gate',
       };
     case 'authorized': {
@@ -175,3 +192,44 @@ export const LINE_STATE_TEXT: Record<RunView['track']['lineState'], string> = {
   rejected: 'Rejected in TrueForge. The action did not run.',
   violated: 'Crossed without an approval decision. See the warning at the top.',
 };
+
+/** What the operation panel says before TrueForge has recorded any tool call. */
+export function emptyOperationText(phase: Phase): string {
+  switch (phase) {
+    case 'waiting':
+      return 'Waiting for the agent to start. Give it its task in TrueForge; each step appears here as TrueForge records it.';
+    case 'paused':
+      return 'No tool calls yet. TrueForge paused the run before the first one; the notice above says what it is waiting on.';
+    case 'failed':
+    case 'finished':
+      return 'The turn ended without any tool call.';
+    default:
+      return 'No tool calls yet. The agent is reading the task.';
+  }
+}
+
+/** The calls TrueForge holds for a decision, each with its blast radius when there are several. */
+function waitingFor(view: RunView): string {
+  const waiting = view.pendingActions;
+  if (waiting.length > 1) {
+    const actions = new Set(
+      waiting.map(
+        (entry) => `${entry.call.ref.tool} (blast radius ${entry.blastRadius.riskClass})`,
+      ),
+    );
+    return `${waiting.length} actions need human authorization: ${[...actions].join(', ')}.`;
+  }
+  const tool = view.gatedAction?.call.ref.tool;
+  return `Human authorization required${tool ? ` for ${tool}` : ''}.`;
+}
+
+/**
+ * What the screen-reader live region says. It changes only with the phase, the current step
+ * or the set of calls waiting for a decision, so the view's frequent updates are not re-read.
+ */
+export function announcementFor(view: RunView): string {
+  if (view.phase === 'awaiting_authorization') return `Autonomy paused. ${waitingFor(view)}`;
+  const status = `${incidentStatus(view).label}. ${headlineFor(view).title}.`;
+  // Calls can still wait for a decision after a crossed boundary, which the run reports first.
+  return view.pendingActions.length > 0 ? `${status} ${waitingFor(view)}` : status;
+}

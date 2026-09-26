@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { RunView, TrackItemView, TrackStatus } from '../../shared/view';
+import type { RunView, ToolCallView, TrackItemView, TrackStatus } from '../../shared/view';
 import { callsDuration, stepCalls, stepEvidenceVerified } from '../lib/console';
 import { LINE_STATE_TEXT } from '../lib/copy';
 import { clock, duration, STEP_STATUS_LABELS } from '../lib/format';
@@ -15,7 +15,15 @@ function stateLabel(item: TrackItemView): string {
   return STEP_STATE_TEXT[item.status];
 }
 
-/** The integration a step used, as TrueForge recorded it; before it runs, the tool it names. */
+/** The system a call reached; empty for TrueForge's own tools, which name none. */
+function systemOf(call: ToolCallView): string {
+  return call.exec ? 'Sandbox' : (call.system ?? call.ref.server);
+}
+
+/**
+ * The integration a step used, as TrueForge recorded it; before it runs, the tool it names.
+ * An observed stage has no tool of its own, so it names every system its calls reached.
+ */
 function integrationFor(view: RunView, item: TrackItemView): string | null {
   if (item.detail === null && item.requiresApproval && item.actionClass !== 'SANDBOX_ONLY') {
     return 'Human decision';
@@ -23,9 +31,15 @@ function integrationFor(view: RunView, item: TrackItemView): string | null {
   // The class chip already says SANDBOX; the room goes to duration and evidence.
   if (item.actionClass === 'SANDBOX_ONLY') return null;
   const calls = stepCalls(view, item);
-  const own = calls.find((call) => call.ref.tool === item.detail) ?? calls[0];
-  if (own) return own.exec ? 'Sandbox' : (own.system ?? own.ref.server);
-  return item.detail;
+  const own = calls.find((call) => call.ref.tool === item.detail);
+  if (own) {
+    const system = systemOf(own);
+    return system === '' ? null : system;
+  }
+  const systems = [...new Set(calls.map(systemOf).filter((system) => system !== ''))];
+  if (systems.length > 0) return systems.join(', ');
+  // An observed stage's detail is a summary of its calls, not a tool.
+  return item.index === null ? null : item.detail;
 }
 
 interface StepProps {
@@ -50,6 +64,8 @@ function Step({ item, view, selected, onSelect }: StepProps) {
   const state = stateLabel(item);
   // Routine states are shown by the node's shape (filled or hollow); exceptions get a word too.
   const routine = item.status === 'done' || state === 'Pending';
+  // A runbook step names its tool; an observed stage's detail already reads as a summary.
+  const tip = !item.detail ? undefined : item.index === null ? item.detail : `Tool: ${item.detail}`;
 
   return (
     <li
@@ -60,7 +76,7 @@ function Step({ item, view, selected, onSelect }: StepProps) {
         type="button"
         className="step__button"
         aria-pressed={selected}
-        title={item.detail ? `Tool: ${item.detail}` : undefined}
+        title={tip}
         onClick={() => {
           onSelect(selected ? null : item.key);
         }}

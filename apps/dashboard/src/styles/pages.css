@@ -12,16 +12,21 @@
   padding: 8px 16px;
   border: 1px solid var(--rule-strong);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--raised);
   color: var(--ink);
   font-family: var(--font-display);
   font-weight: 650;
   font-size: 14px;
   letter-spacing: 0.02em;
   cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    filter 140ms ease;
 }
 
 .button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--rule-strong));
   background: var(--well);
 }
 
@@ -30,14 +35,24 @@
   cursor: not-allowed;
 }
 
+/* The primary action. Approving still only forwards the decision to TrueForge. */
 .button--approve {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--panel);
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  color: var(--on-primary);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.18) inset,
+    0 10px 24px -10px color-mix(in srgb, var(--primary) 80%, transparent);
 }
 
 .button--approve:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--ink) 86%, var(--panel));
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  filter: brightness(1.1);
+}
+
+.button--approve:disabled {
+  box-shadow: none;
 }
 
 .button--reject {
@@ -167,10 +182,22 @@
   padding: 9px 11px;
   border: 1px solid var(--rule-strong);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--well);
   color: var(--ink);
   font: inherit;
   font-size: 15px;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible,
+.decide__reason textarea:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 35%, transparent);
 }
 
 .field input {
@@ -194,7 +221,7 @@
 .prompt {
   padding: 12px 14px;
   border: 1px solid var(--rule);
-  border-left: 3px solid var(--ink);
+  border-left: 3px solid var(--accent);
   border-radius: var(--radius);
   background: var(--well);
   font-family: var(--font-mono);
@@ -385,7 +412,7 @@
 
 .report__title {
   font-family: var(--font-display);
-  font-stretch: 75%;
+  font-stretch: var(--display-stretch);
   font-weight: 780;
   font-size: clamp(28px, 3vw, 40px);
   line-height: 1.06;
@@ -441,6 +468,18 @@
   border-top: 1px solid var(--rule);
 }
 
+/* One gated action; several are listed when TrueForge held more than one. */
+.report__action {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.report__action + .report__action {
+  padding-top: 10px;
+  border-top: 1px dashed var(--rule);
+}
+
 .report__list {
   display: flex;
   flex-direction: column;
@@ -476,6 +515,14 @@ ol.report__list {
   padding: 7px 10px 7px 0;
   border-bottom: 1px solid var(--rule);
   vertical-align: top;
+}
+
+/* Break unspaced tokens (JSON, paths, tool names) instead of widening the page.
+   Only the free-text columns get this; the short Kind/Claim labels keep whole words. */
+.report code,
+.report__table td:first-child,
+.report__table td:last-child {
+  overflow-wrap: anywhere;
 }
 
 .report__table--timeline td:first-child {
@@ -533,6 +580,13 @@ ol.report__list {
     --green-wash: #dff0e4;
     --accent: #1f5fd1;
     --accent-wash: #e3ecfb;
+    --primary: #1f5fd1;
+    --primary-2: #1f5fd1;
+    --glow-a: transparent;
+    --glow-b: transparent;
+    --shadow: none;
+    --shadow-lift: none;
+    --shadow-pinned: none;
   }
 
   .status-strip,

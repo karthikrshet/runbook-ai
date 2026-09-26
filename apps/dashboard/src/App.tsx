@@ -126,7 +126,8 @@ function RunScreen({ sessionId }: { sessionId: string }) {
                   <>
                     <StatusHeadline view={view} />
                     {view.gatedAction ? (
-                      <ApprovalBoundary view={view} />
+                      // Calls can still wait for a decision after a crossed boundary.
+                      <ApprovalBoundary view={view} gated={focused} onChoose={setPendingChoice} />
                     ) : (
                       <CurrentOperation view={view} />
                     )}

@@ -30,7 +30,10 @@ export type Phase =
   /** A gated or forbidden action ran without an approval decision. */
   | 'violated';
 
-/** Why TrueForge paused a turn when no approval is pending. */
+/**
+ * What a paused turn waits on besides approvals. Also set next to a pending approval
+ * when TrueForge waits on a connector login or a question as well.
+ */
 export interface PauseView {
   /** connector_auth: a connector needs a login; user_input: the agent asked the user something. */
   reason: 'connector_auth' | 'user_input' | 'other';
@@ -167,6 +170,23 @@ export interface EvidenceView {
   blastRadius: BlastRadius | null;
 }
 
+/**
+ * True when the evidence package's proposed action describes this call: the same tool,
+ * in the class the permission matrix gives it. A same-named tool on a connector outside
+ * the matrix is unclassified, so it never matches; neither does a forbidden call.
+ */
+export function isProposedAction(
+  evidence: EvidenceView | null,
+  call: ToolCallView,
+): evidence is EvidenceView {
+  return (
+    evidence !== null &&
+    evidence.proposedAction.tool === call.ref.tool &&
+    evidence.proposedAction.actionClass === call.actionClass &&
+    call.actionClass !== 'FORBIDDEN'
+  );
+}
+
 export interface VerificationView {
   reportedAt: string;
   healthy: boolean;
@@ -301,7 +321,10 @@ export interface RunView {
   };
   turn: { status: TurnStatus; message: string | null; at: string | null };
   phase: Phase;
-  /** Set when phase is 'paused'. */
+  /**
+   * Set when phase is 'paused', and during 'awaiting_authorization' when TrueForge also
+   * waits on a connector login or a question: the decision alone will not resume the run.
+   */
   pause: PauseView | null;
   gatedAction: GatedActionView | null;
   /** Every call TrueForge is holding for a decision, oldest first; the first is gatedAction. */

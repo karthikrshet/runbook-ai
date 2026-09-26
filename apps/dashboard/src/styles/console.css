@@ -76,6 +76,7 @@
   padding: 10px 12px;
   border: 1px dashed var(--rule-strong);
   border-radius: var(--radius);
+  background: color-mix(in srgb, var(--well) 55%, transparent);
   font-size: 13px;
   color: var(--ink-3);
 }
@@ -100,9 +101,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px 20px;
-  padding: 5px 24px;
+  padding: 6px 24px;
   border-bottom: 1px solid var(--rule);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
   font-size: 12.5px;
 }
 
@@ -129,6 +130,7 @@
 
 .indicator--good .indicator__dot {
   background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 20%, transparent);
 }
 
 .indicator--caution .indicator__dot {
@@ -268,9 +270,10 @@
 /* ---------- panels ---------- */
 
 .panel {
-  background: var(--surface);
+  background: linear-gradient(180deg, var(--raised), var(--surface) 56px);
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
   min-width: 0;
 }
 
@@ -356,10 +359,11 @@
 
 .incident__title {
   font-family: var(--font-display);
-  font-stretch: 87.5%;
-  font-weight: 720;
+  font-stretch: var(--display-stretch);
+  font-weight: 700;
   font-size: 19px;
   line-height: 1.2;
+  letter-spacing: -0.01em;
 }
 
 .incident__facts {
@@ -395,6 +399,7 @@
   padding: 2px 10px;
   border: 1px solid var(--rule-strong);
   border-radius: 999px;
+  background: color-mix(in srgb, var(--raised) 70%, transparent);
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 11px;
@@ -413,6 +418,7 @@
 .status-pill--gate,
 .status-pill--bad {
   border-color: var(--red);
+  background: color-mix(in srgb, var(--red-wash) 80%, transparent);
   color: var(--red-ink);
 }
 
@@ -423,6 +429,7 @@
 
 .status-pill--good {
   border-color: var(--green);
+  background: color-mix(in srgb, var(--green-wash) 80%, transparent);
   color: var(--green-ink);
 }
 
@@ -432,6 +439,7 @@
 
 .status-pill--caution {
   border-color: var(--amber);
+  background: color-mix(in srgb, var(--amber-wash) 80%, transparent);
   color: var(--amber-ink);
 }
 
@@ -444,8 +452,9 @@
 
 .boundary {
   border: 1px solid var(--rule-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--shadow-lift);
   scroll-margin: 16px;
 }
 
@@ -545,10 +554,11 @@
 .boundary__title {
   margin-top: 2px;
   font-family: var(--font-display);
-  font-stretch: 87.5%;
-  font-weight: 780;
+  font-stretch: var(--display-stretch);
+  font-weight: 740;
   font-size: 24px;
-  line-height: 1.12;
+  line-height: 1.14;
+  letter-spacing: -0.015em;
 }
 
 .boundary__body {
@@ -685,7 +695,7 @@
   flex-wrap: wrap;
   margin: 0 20px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
@@ -750,7 +760,7 @@
   min-width: 0;
   padding: 7px 10px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--well);
 }
 
@@ -846,7 +856,7 @@
   gap: 8px;
   padding: 10px 12px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--well);
 }
 
@@ -957,7 +967,7 @@
   gap: 2px;
   padding: 8px 12px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--well);
 }
 
@@ -990,7 +1000,7 @@
 
 .policy__value {
   font-family: var(--font-display);
-  font-stretch: 87.5%;
+  font-stretch: var(--display-stretch);
   font-weight: 800;
   font-size: 17px;
   line-height: 1.3;
@@ -1032,7 +1042,7 @@
   gap: 8px;
   padding: 12px 14px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--well);
   min-width: 0;
 }
@@ -1262,7 +1272,7 @@
 
 .diff {
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius);
   overflow: hidden;
   background: var(--panel);
 }
@@ -1351,7 +1361,7 @@
 /* ---------- loading ---------- */
 
 .skeleton {
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: linear-gradient(90deg, var(--surface) 0%, var(--raised) 50%, var(--surface) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.6s ease-in-out infinite;
@@ -1446,20 +1456,48 @@
 /* ---------- approval boundary: decision always in reach ---------- */
 
 .boundary__head {
-  border-radius: 10px 10px 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
 .boundary__foot {
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 
 /* While TrueForge holds the call, the decision stays in view as the operator reads the
-   evidence above it. It sticks only while the boundary itself is on screen. */
-.boundary--approval-pending .boundary__foot {
-  position: sticky;
-  bottom: 0;
-  z-index: 3;
-  box-shadow: 0 -12px 24px -14px rgb(0 0 0 / 0.6);
+   evidence above it. It sticks only while the boundary itself is on screen, and only in a
+   fixed-height console tall enough to keep the boundary head clear of it on first load.
+   Elsewhere it waits at the end of the boundary. */
+@media (min-width: 1200px) and (min-height: 740px) {
+  .boundary--approval-pending .boundary__foot {
+    position: sticky;
+    bottom: var(--sticky-bottom, 0px);
+    z-index: 3;
+    box-shadow: var(--shadow-pinned);
+  }
+
+  /* A control focused above the pinned bar scrolls clear of the bar's measured height
+     (DecisionFoot) instead of staying under it. */
+  .boundary--approval-pending
+    > :not(.boundary__foot)
+    :is(a[href], button, summary, input, select, textarea, [tabindex]) {
+    scroll-margin-bottom: calc(var(--decision-foot-h, 0px) + 16px);
+  }
+}
+
+/* Pinned while its own place is still below the fold, the bar keeps its label, buttons and
+   any prompt, status or error, and drops the explanation the boundary head already gives. */
+.boundary__foot--stuck {
+  padding-block: 10px;
+}
+
+.boundary__foot--stuck :is(.decide[data-step='choose'], .decide--preview) {
+  align-items: center;
+}
+
+.boundary__foot--stuck
+  :is(.decide[data-step='choose'], .decide--preview)
+  :is(.decide__explain, .decide__alt:not(:focus)) {
+  display: none;
 }
 
 .pending-switch {
@@ -1470,7 +1508,7 @@
   margin: 12px 20px 0;
   padding: 8px 12px;
   border: 1px solid color-mix(in srgb, var(--red) 45%, var(--rule));
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--well);
   font-size: 13px;
 }
@@ -1478,6 +1516,15 @@
 .pending-switch__label {
   margin-right: 4px;
   color: var(--ink-2);
+}
+
+/* Each choice reads as a button (3:1 outline); the pressed one keeps its accent border. */
+.pending-switch .filter:not([aria-pressed='true']) {
+  border-color: var(--control-border);
+}
+
+.pending-switch .filter:not([aria-pressed='true']):hover {
+  border-color: var(--ink-3);
 }
 
 .callout--demo {
@@ -1500,13 +1547,29 @@
 
 /* ---------- sessions list ---------- */
 
+.sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 0;
+}
+
 .sessions a {
-  padding: 14px 12px;
-  border-radius: 8px;
+  padding: 14px 18px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  transition:
+    border-color 140ms ease,
+    transform 140ms ease,
+    background 140ms ease;
 }
 
 .sessions a:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--rule));
   background: var(--raised);
+  transform: translateY(-1px);
 }
 
 .sessions__title {

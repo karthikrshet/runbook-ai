@@ -124,7 +124,8 @@ function observedTrack(input: TrackInput): Omit<TrackView, 'lineState'> {
     stage('sandbox', 'Reproduce and fix in the sandbox', sandbox, 'SANDBOX_ONLY'),
     {
       ...stage('act', 'Change an external system', act, null),
-      status: input.gatedAction ? checkpointOrCallStatus(input.gatedAction) : 'pending',
+      // The step is the action itself: approved is not done until TrueForge records its result.
+      status: input.gatedAction ? fromCallStatus(input.gatedAction.status, false) : 'pending',
       gated: true,
       requiresApproval: true,
     },
@@ -212,9 +213,4 @@ function checkpointStatus(gated: ToolCallView): TrackStatus {
   if (gated.approval?.decision === 'allow') return 'done';
   if (gated.approval?.decision === 'deny' || gated.status === 'denied') return 'rejected';
   return 'pending';
-}
-
-function checkpointOrCallStatus(gated: ToolCallView): TrackStatus {
-  const checkpoint = checkpointStatus(gated);
-  return checkpoint === 'pending' ? fromCallStatus(gated.status, false) : checkpoint;
 }

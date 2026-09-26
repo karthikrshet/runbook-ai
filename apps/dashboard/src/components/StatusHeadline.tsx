@@ -1,6 +1,7 @@
 import type { RunView } from '../../shared/view';
 import { useElapsed } from '../lib/api';
 import { useConfig } from '../lib/config';
+import { automaticCallCount } from '../lib/console';
 import { headlineFor } from '../lib/copy';
 import { clock, duration, plural } from '../lib/format';
 import { ExternalIcon } from './Icons';
@@ -13,7 +14,7 @@ export function StatusHeadline({ view }: { view: RunView }) {
   const elapsed = elapsedMs === null ? null : duration(elapsedMs);
 
   const sandboxRuns = view.sandbox.execCallIds.length;
-  const automatic = view.counts.automatic - sandboxRuns;
+  const automatic = automaticCallCount(view);
   const awaiting = view.phase === 'awaiting_authorization';
   const reportHref = `?session=${encodeURIComponent(view.session.id)}&view=report`;
 
@@ -53,7 +54,7 @@ export function StatusHeadline({ view }: { view: RunView }) {
           Incident report
         </a>
         <p className="headline__facts">
-          <strong>{plural(Math.max(automatic, 0), 'automatic call')}</strong> ·{' '}
+          <strong>{plural(automatic, 'automatic call')}</strong> ·{' '}
           <strong>{plural(sandboxRuns, 'sandbox command')}</strong> ·{' '}
           <strong>{plural(view.counts.gatedExecuted, 'external change')}</strong>
           {view.startedAt && (

@@ -178,10 +178,21 @@ const HARNESS_INTERNAL: ToolPolicy = {
   system: null,
 };
 
+function toolTable(role: keyof ConnectorNames): Readonly<Record<string, ToolPolicy>> {
+  return role === 'runbookai' ? RUNBOOKAI_TOOLS : GITHUB_MCP_TOOLS;
+}
+
+/**
+ * Names of the tools on a connector that the matrix classifies. For GitHub that is a
+ * curated subset: the GitHub MCP server serves more tools than these.
+ */
+export function matrixToolNames(role: keyof ConnectorNames): string[] {
+  return Object.keys(toolTable(role));
+}
+
 /** Names of the tools on a connector that RunbookAI's policy never runs without approval. */
 export function gatedToolNames(role: keyof ConnectorNames): string[] {
-  const table = role === 'runbookai' ? RUNBOOKAI_TOOLS : GITHUB_MCP_TOOLS;
-  return Object.entries(table)
+  return Object.entries(toolTable(role))
     .filter(
       ([, policy]) => policy.actionClass !== 'READ_ONLY' && policy.actionClass !== 'SANDBOX_ONLY',
     )

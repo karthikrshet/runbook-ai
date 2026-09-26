@@ -507,13 +507,7 @@ export function buildInc001Events(): Item[] {
     threadId: 'main',
     toolCalls: [{ id: 'fx_call_pr', sourceEventId: prMessageId }],
   });
-  push({
-    type: 'turn.update',
-    id: nextId(),
-    createdAt: at(67),
-    threadId: null,
-    state: { status: 'paused', actionRequiredOnEvents: [{ id: approval.id }] },
-  });
+  // As in TrueForge, the pause is reported only in the finished turn's required actions.
   push({
     type: 'turn.done',
     id: nextId(),

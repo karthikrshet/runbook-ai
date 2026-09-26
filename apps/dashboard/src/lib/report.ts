@@ -1,5 +1,5 @@
-import type { EvidenceItemView, RunView } from '../../shared/view';
-import { POLICY_DECISION_TEXT } from './console';
+import type { EvidenceItemView, GatedActionView, RunView } from '../../shared/view';
+import { automaticCallCount, POLICY_DECISION_TEXT } from './console';
 import { headlineFor } from './copy';
 import { CLASS_LABELS, clock, duration, plural, STEP_STATUS_LABELS, toolName } from './format';
 
@@ -38,6 +38,20 @@ export function runDuration(view: RunView): string | null {
   return duration(Date.parse(view.lastEventAt) - Date.parse(view.startedAt));
 }
 
+/**
+ * The gated actions the report lists: the view's gated action and every call TrueForge
+ * is holding for a decision, each once, in TrueForge's order (as the console lists them).
+ */
+export function reportActions(view: RunView): GatedActionView[] {
+  const order = new Map(view.toolCalls.map((call, index) => [call.id, index]));
+  const byId = new Map<string, GatedActionView>();
+  for (const entry of [...view.pendingActions, ...(view.gatedAction ? [view.gatedAction] : [])]) {
+    if (!byId.has(entry.call.id)) byId.set(entry.call.id, entry);
+  }
+  const position = (entry: GatedActionView): number => order.get(entry.call.id) ?? order.size;
+  return [...byId.values()].sort((a, b) => position(a) - position(b));
+}
+
 /** Escapes text for a Markdown table cell. */
 function cell(text: string): string {
   return text.replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
@@ -46,7 +60,7 @@ function cell(text: string): string {
 /** The incident report as Markdown, built only from the view (TrueForge's record). */
 export function buildReportMarkdown(view: RunView): string {
   const copy = headlineFor(view);
-  const gated = view.gatedAction;
+  const actions = reportActions(view);
   const lines: string[] = [];
   const push = (...more: string[]): void => {
     lines.push(...more);
@@ -72,7 +86,7 @@ export function buildReportMarkdown(view: RunView): string {
     `| Last event | ${view.lastEventAt ?? 'n/a'}${runDuration(view) ? ` (${runDuration(view) ?? ''})` : ''} |`,
   );
   push(
-    `| Agent actions | ${plural(view.counts.automatic, 'automatic call')}, ${plural(view.sandbox.execCallIds.length, 'sandbox command')}, ${plural(view.counts.gatedExecuted, 'external change')} |`,
+    `| Agent actions | ${plural(automaticCallCount(view), 'automatic call')}, ${plural(view.sandbox.execCallIds.length, 'sandbox command')}, ${plural(view.counts.gatedExecuted, 'external change')} |`,
   );
   const boundary = view.violations.some((v) => v.severity === 'violation')
     ? 'Crossed without approval (see violations)'
@@ -80,9 +94,14 @@ export function buildReportMarkdown(view: RunView): string {
   push(`| Approval boundary | ${boundary} |`);
   push(`| Evidence gate | ${cell(gateSummary(view))} |`, '');
 
-  if (gated) {
+  if (actions.length > 0)
+    push(
+      actions.length > 1 ? `## Gated actions (${String(actions.length)})` : '## Gated action',
+      '',
+    );
+  for (const [index, gated] of actions.entries()) {
     const call = gated.call;
-    push('## Gated action', '');
+    if (actions.length > 1) push(`### ${String(index + 1)}. \`${toolName(call.ref)}\``, '');
     push(`- Tool: \`${toolName(call.ref)}\` (${CLASS_LABELS[call.actionClass]})`);
     for (const arg of call.args) push(`- ${arg.key}: \`${arg.value}\``);
     const decision = call.approval?.decision;

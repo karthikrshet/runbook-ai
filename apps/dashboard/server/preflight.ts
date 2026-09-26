@@ -1,6 +1,12 @@
-import { approvalCoverage, gatedToolNames, type ConnectorNames } from '@runbook-ai/core';
+import {
+  approvalCoverage,
+  gatedToolNames,
+  matrixToolNames,
+  TRUEFORGE_DEFAULT_APPROVAL_SELECTORS,
+  type ConnectorNames,
+} from '@runbook-ai/core';
 import type { TrueForgeApi } from '@truefoundry/trueforge-sdk';
-import type { PreflightCheckView, PreflightView } from '../shared/view.js';
+import type { PreflightCheckView, PreflightStatus, PreflightView } from '../shared/view.js';
 
 type Gate = PreflightView['gates'][number];
 
@@ -85,9 +91,12 @@ export function buildPreflight(
     },
   ];
 
-  // The permission matrix knows only the RunbookAI and GitHub connectors. Any other tool is
-  // unclassified: the console reports each call as a policy gap, and TrueForge pauses before
-  // it only if the connector requires approval for all its tools.
+  // The permission matrix classifies every RunbookAI tool, but only a curated subset of the
+  // GitHub MCP server's, which serves more.
+  if (github) checks.push(githubUnlisted(github));
+
+  // A tool on any other connector is unclassified: the console reports each call as a policy
+  // gap, and TrueForge pauses before it only if the connector requires approval for all tools.
   const others = servers.filter(
     (server) => server.name !== connectors.runbookai && server.name !== connectors.github,
   );
@@ -113,6 +122,62 @@ export function buildPreflight(
     gates,
     canStart: checks.every((check) => check.status !== 'fail'),
   };
+}
+
+/**
+ * The GitHub MCP server's tools outside the matrix (create_issue, create_repository, ...)
+ * run unclassified. They are covered when TrueForge pauses before them, or when the
+ * connector names the tools it enables and lists none of them.
+ */
+function githubUnlisted(server: TrueForgeApi.McpServer): PreflightCheckView {
+  const approvals = server.requireApprovalForTools ?? TRUEFORGE_DEFAULT_APPROVAL_SELECTORS;
+  const enabled = server.enableTools ?? ['@all'];
+  const known = new Set(matrixToolNames('github'));
+  // Enabled by name, outside the matrix, and not paused by name.
+  const unlisted = enabled.filter(
+    (tool) =>
+      !tool.startsWith('@') &&
+      !known.has(tool) &&
+      !approvals.includes(tool) &&
+      !server.disableTools?.includes(tool),
+  );
+  const selectors = enabled.filter((tool) => tool.startsWith('@'));
+  // `@all` (or any selector but `@read-only`) lets in tools nobody listed.
+  const open = selectors.some((selector) => selector !== '@read-only');
+  const check = (status: PreflightStatus, detail: string): PreflightCheckView => ({
+    key: 'github-unlisted',
+    label: 'GitHub tools outside the permission matrix',
+    status,
+    detail,
+  });
+
+  if (approvals.includes('@all')) {
+    return check(
+      'ok',
+      `TrueForge pauses before every tool on ${server.name}, including ones RunbookAI's policy does not classify.`,
+    );
+  }
+  if (!open && unlisted.length === 0) {
+    return selectors.length === 0
+      ? check('ok', `${server.name} exposes only tools RunbookAI's policy classifies.`)
+      : check(
+          'warn',
+          `${server.name} exposes only tools the GitHub server marks read-only, so tools RunbookAI's policy does not classify stay hidden only if those marks are right. Name the enabled tools in enableTools to be certain.`,
+        );
+  }
+  if (approvals.includes('@write')) {
+    return check(
+      'warn',
+      `Tools on ${server.name} that RunbookAI's policy does not classify pause only if the GitHub server marks them as write tools. List only permission-matrix tools in enableTools to be certain.`,
+    );
+  }
+  const them = unlisted.length === 1 ? 'it' : 'them';
+  return check(
+    'warn',
+    open
+      ? `${server.name} serves tools RunbookAI's policy does not classify, such as create_issue and create_repository, and TrueForge would run them without asking. List only permission-matrix tools in enableTools, or add "@write" to requireApprovalForTools.`
+      : `${unlisted.join(', ')} on ${server.name}: not classified by RunbookAI's policy, and TrueForge would run ${them} without asking. Remove ${them} from enableTools, or name ${them} in requireApprovalForTools.`,
+  );
 }
 
 function gatesFor(server: TrueForgeApi.McpServer, tools: readonly string[]): Gate[] {

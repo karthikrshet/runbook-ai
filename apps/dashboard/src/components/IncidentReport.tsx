@@ -1,8 +1,14 @@
 import type { RunView } from '../../shared/view';
 import { headlineFor } from '../lib/copy';
 import { CLASS_LABELS, clock, plural, STEP_STATUS_LABELS, toolName } from '../lib/format';
-import { POLICY_DECISION_TEXT } from '../lib/console';
-import { buildReportMarkdown, gateSummary, provenanceText, runDuration } from '../lib/report';
+import { automaticCallCount, POLICY_DECISION_TEXT } from '../lib/console';
+import {
+  buildReportMarkdown,
+  gateSummary,
+  provenanceText,
+  reportActions,
+  runDuration,
+} from '../lib/report';
 
 function download(view: RunView): void {
   const blob = new Blob([buildReportMarkdown(view)], { type: 'text/markdown;charset=utf-8' });
@@ -17,8 +23,7 @@ function download(view: RunView): void {
 /** A printable incident report, built from the same TrueForge record as the live view. */
 export function IncidentReport({ view }: { view: RunView }) {
   const copy = headlineFor(view);
-  const gated = view.gatedAction;
-  const call = gated?.call ?? null;
+  const actions = reportActions(view);
   const violated = view.violations.some((violation) => violation.severity === 'violation');
   const flagged = view.toolCalls.filter((c) => c.untrusted.length > 0);
   const liveHref = `?session=${encodeURIComponent(view.session.id)}`;
@@ -93,7 +98,7 @@ export function IncidentReport({ view }: { view: RunView }) {
         <div>
           <dt>Agent actions</dt>
           <dd>
-            {plural(view.counts.automatic - view.sandbox.execCallIds.length, 'automatic call')},{' '}
+            {plural(automaticCallCount(view), 'automatic call')},{' '}
             {plural(view.sandbox.execCallIds.length, 'sandbox command')},{' '}
             {plural(view.counts.gatedExecuted, 'external change')}
           </dd>
@@ -110,36 +115,42 @@ export function IncidentReport({ view }: { view: RunView }) {
         </div>
       </dl>
 
-      {call && gated && (
+      {actions.length > 0 && (
         <section className="report__section">
-          <h2 className="sublabel">Gated action</h2>
-          <p>
-            <code>{toolName(call.ref)}</code> · {CLASS_LABELS[call.actionClass]} · blast radius{' '}
-            <strong>{gated.blastRadius.riskClass}</strong> · policy decision{' '}
-            <strong>{POLICY_DECISION_TEXT[call.decision].label}</strong>
-          </p>
-          <ul className="report__list">
-            {call.args.map((arg) => (
-              <li key={arg.key}>
-                <code>{arg.key}</code>: {arg.value}
-              </li>
-            ))}
-            <li>
-              Decision:{' '}
-              {call.approval?.decision === 'allow'
-                ? `approved in TrueForge at ${clock(call.approval.decidedAt)}`
-                : call.approval?.decision === 'deny'
-                  ? `rejected in TrueForge at ${clock(call.approval.decidedAt)}${call.approval.reason ? ` (“${call.approval.reason}”)` : ''}`
-                  : call.status === 'awaiting_approval'
-                    ? 'waiting in TrueForge'
-                    : 'no decision recorded'}
-            </li>
-            {call.resultPreview && (
-              <li>
-                Result recorded by TrueForge: <code>{call.resultPreview}</code>
-              </li>
-            )}
-          </ul>
+          <h2 className="sublabel">
+            {actions.length > 1 ? `Gated actions (${String(actions.length)})` : 'Gated action'}
+          </h2>
+          {actions.map(({ call, blastRadius }) => (
+            <div key={call.id} className="report__action">
+              <p>
+                <code>{toolName(call.ref)}</code> · {CLASS_LABELS[call.actionClass]} · blast radius{' '}
+                <strong>{blastRadius.riskClass}</strong> · policy decision{' '}
+                <strong>{POLICY_DECISION_TEXT[call.decision].label}</strong>
+              </p>
+              <ul className="report__list">
+                {call.args.map((arg) => (
+                  <li key={arg.key}>
+                    <code>{arg.key}</code>: {arg.value}
+                  </li>
+                ))}
+                <li>
+                  Decision:{' '}
+                  {call.approval?.decision === 'allow'
+                    ? `approved in TrueForge at ${clock(call.approval.decidedAt)}`
+                    : call.approval?.decision === 'deny'
+                      ? `rejected in TrueForge at ${clock(call.approval.decidedAt)}${call.approval.reason ? ` (“${call.approval.reason}”)` : ''}`
+                      : call.status === 'awaiting_approval'
+                        ? 'waiting in TrueForge'
+                        : 'no decision recorded'}
+                </li>
+                {call.resultPreview && (
+                  <li>
+                    Result recorded by TrueForge: <code>{call.resultPreview}</code>
+                  </li>
+                )}
+              </ul>
+            </div>
+          ))}
         </section>
       )}
 

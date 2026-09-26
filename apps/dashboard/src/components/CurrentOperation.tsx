@@ -1,5 +1,6 @@
 import type { RunView } from '../../shared/view';
 import { currentCall, stepForCall } from '../lib/console';
+import { emptyOperationText } from '../lib/copy';
 import { CallDetail } from './CallDetail';
 
 /**
@@ -50,11 +51,7 @@ export function CurrentOperation({ view }: { view: RunView }) {
             )}
           </>
         ) : (
-          <p className="empty">
-            {view.phase === 'waiting'
-              ? 'Waiting for the agent to start. Give it its task in TrueForge; each step appears here as TrueForge records it.'
-              : 'No tool calls yet. The agent is reading the task.'}
-          </p>
+          <p className="empty">{emptyOperationText(view.phase)}</p>
         )}
       </div>
     </section>

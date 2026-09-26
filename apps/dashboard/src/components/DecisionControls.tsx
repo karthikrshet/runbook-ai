@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { ToolCallView } from '../../shared/view';
 import { postDecision } from '../lib/api';
 import { describeAction } from '../lib/copy';
@@ -70,7 +70,7 @@ export function DecisionControls({ sessionId, call, trueforgeUrl }: DecisionCont
   const busy = step.kind === 'sending' || step.kind === 'sent';
 
   return (
-    <div className="decide" ref={containerRef} onKeyDown={onKeyDown}>
+    <div className="decide" data-step={step.kind} ref={containerRef} onKeyDown={onKeyDown}>
       <div className="decide__text">
         <p className="decide__label">Your decision</p>
         {(step.kind === 'choose' || step.kind === 'failed') &&
@@ -80,7 +80,7 @@ export function DecisionControls({ sessionId, call, trueforgeUrl }: DecisionCont
               rejected; nothing outside the sandbox changes.
             </p>
           ) : (
-            <p>
+            <p className="decide__explain">
               Approving lets TrueForge {action} now. Rejecting stops it, and nothing outside the
               sandbox changes.
             </p>
@@ -206,5 +206,71 @@ export function DecisionControls({ sessionId, call, trueforgeUrl }: DecisionCont
         </a>
       )}
     </div>
+  );
+}
+
+interface DecisionFootProps {
+  /** TrueForge is holding the call, so the footer may be pinned (console.css). */
+  pending: boolean;
+  children: ReactNode;
+}
+
+/**
+ * The approval boundary's footer, which carries the decision. While TrueForge holds the
+ * call, CSS pins it to the bottom of the console column. This marks it stuck while its own
+ * place is still below the fold, so the bar can drop the copy the boundary head already
+ * gives, and publishes its height so a control focused above it scrolls clear of it.
+ */
+export function DecisionFoot({ pending, children }: DecisionFootProps) {
+  const markRef = useRef<HTMLDivElement>(null);
+  const footRef = useRef<HTMLElement>(null);
+  const [stuck, setStuck] = useState(false);
+
+  useEffect(() => {
+    const mark = markRef.current;
+    const foot = footRef.current;
+    const boundary = foot?.parentElement;
+    if (!pending || !mark || !foot || !boundary) return;
+
+    // The mark sits just before the footer, so its place never depends on the footer's
+    // height: the bar shrinking once stuck cannot unstick it.
+    const place = new IntersectionObserver(([entry]) => {
+      if (!entry) return;
+      // Out of sight below the fold while the footer shows above it: pinned. Out of sight
+      // above, or not pinned in this layout, the footer is in its own place.
+      setStuck(
+        !entry.isIntersecting && entry.boundingClientRect.top > foot.getBoundingClientRect().top,
+      );
+    });
+    const size = new ResizeObserver(() => {
+      boundary.style.setProperty('--decision-foot-h', `${String(foot.offsetHeight)}px`);
+    });
+    // Crossing a layout breakpoint turns pinning on or off without moving the mark.
+    const recheck = (): void => {
+      place.unobserve(mark);
+      place.observe(mark);
+    };
+    place.observe(mark);
+    size.observe(foot);
+    window.addEventListener('resize', recheck);
+    return () => {
+      place.disconnect();
+      size.disconnect();
+      window.removeEventListener('resize', recheck);
+      boundary.style.removeProperty('--decision-foot-h');
+    };
+  }, [pending]);
+
+  return (
+    <>
+      <div ref={markRef} aria-hidden="true" />
+      <footer
+        ref={footRef}
+        className={pending && stuck ? 'boundary__foot boundary__foot--stuck' : 'boundary__foot'}
+        id="decision"
+      >
+        {children}
+      </footer>
+    </>
   );
 }

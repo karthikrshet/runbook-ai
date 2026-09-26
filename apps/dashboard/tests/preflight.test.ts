@@ -1,3 +1,4 @@
+import { gatedToolNames } from '@runbook-ai/core';
 import type { TrueForgeApi } from '@truefoundry/trueforge-sdk';
 import { describe, expect, it } from 'vitest';
 import { buildPreflight } from '../server/preflight.js';
@@ -156,5 +157,65 @@ describe('connectors outside the permission matrix', () => {
       connectors,
     );
     expect(Object.keys(status(none))).not.toContain('unclassified');
+  });
+});
+
+describe('GitHub tools outside the permission matrix', () => {
+  // The matrix classifies only a curated subset of the GitHub MCP server's tools.
+  const base = { config: { sandbox: { enabled: true } } };
+  const runbookai = { name: 'runbookai', requireApprovalForTools: gatedToolNames('runbookai') };
+  const withGithub = (github: Omit<TrueForgeApi.McpServer, 'name'>) =>
+    buildPreflight(
+      'runbookai',
+      agent({ ...base, mcpServers: [runbookai, { name: 'github', ...github }] }),
+      connectors,
+    );
+  const detail = (view: ReturnType<typeof buildPreflight>) =>
+    view.checks.find((check) => check.key === 'github-unlisted')?.detail;
+
+  it('warns when only the matrix tools pause, so create_issue would run without asking', () => {
+    const view = withGithub({ requireApprovalForTools: gatedToolNames('github') });
+    expect(status(view)).toMatchObject({ approvals: 'ok', 'github-unlisted': 'warn' });
+    expect(detail(view)).toContain('such as create_issue and create_repository');
+    expect(view.canStart).toBe(true);
+  });
+
+  it('names the unclassified tools an allowlist enables', () => {
+    const view = withGithub({
+      enableTools: ['get_file_contents', 'create_issue'],
+      requireApprovalForTools: gatedToolNames('github'),
+    });
+    expect(status(view)['github-unlisted']).toBe('warn');
+    expect(detail(view)).toMatch(/^create_issue on github: not classified/);
+  });
+
+  it('accepts @all, an allowlist of matrix tools, or unclassified tools paused by name', () => {
+    expect(status(withGithub({ requireApprovalForTools: ['@all'] }))['github-unlisted']).toBe('ok');
+    const matrixOnly = withGithub({
+      enableTools: ['get_file_contents', 'create_pull_request'],
+      requireApprovalForTools: ['create_pull_request'],
+    });
+    expect(status(matrixOnly)).toMatchObject({ approvals: 'ok', 'github-unlisted': 'ok' });
+    const named = withGithub({
+      enableTools: ['create_issue'],
+      requireApprovalForTools: ['create_issue'],
+    });
+    expect(status(named)['github-unlisted']).toBe('ok');
+  });
+
+  it('warns that @write or @read-only coverage depends on the server marking its tools', () => {
+    const write = withGithub({ requireApprovalForTools: [...gatedToolNames('github'), '@write'] });
+    expect(status(write)['github-unlisted']).toBe('warn');
+    expect(detail(write)).toContain('marks them as write tools');
+    expect(detail(withGithub({ enableTools: ['@read-only'] }))).toContain('marks read-only');
+  });
+
+  it('adds no such check for the RunbookAI connector, whose tools the matrix all knows', () => {
+    const view = buildPreflight(
+      'runbookai',
+      agent({ ...base, mcpServers: [runbookai] }),
+      connectors,
+    );
+    expect(status(view)).toEqual({ agent: 'ok', sandbox: 'ok', connector: 'ok', approvals: 'ok' });
   });
 });
