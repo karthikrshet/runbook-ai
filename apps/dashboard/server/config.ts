@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'];
+const TRUEFORGE_WRITE_ACKNOWLEDGEMENT = 'I_UNDERSTAND_TRUEFORGE_WRITES';
 
 /** A blank variable, as a copied .env.example leaves it, counts as unset. */
 const blankAsUnset = (value: unknown): unknown =>
@@ -23,6 +24,10 @@ const EnvSchema = z.object({
   TRUEFORGE_AGENT_NAME: z.string().min(1).max(120).default('runbookai'),
   DASHBOARD_DECISIONS: z.enum(['on', 'off']).default('on'),
   DASHBOARD_START_RUNS: z.enum(['on', 'off']).default('on'),
+  DASHBOARD_TRUEFORGE_WRITE_ACK: z.preprocess(
+    blankAsUnset,
+    z.literal(TRUEFORGE_WRITE_ACKNOWLEDGEMENT).optional(),
+  ),
   DASHBOARD_SOURCE: z.preprocess(blankAsUnset, z.enum(['trueforge', 'fixture']).optional()),
   DASHBOARD_ENVIRONMENT: z.preprocess(blankAsUnset, z.string().trim().max(40).optional()),
   RUNBOOKAI_RUNBOOKS_DIR: optionalString,
@@ -91,6 +96,8 @@ export function loadConfig(argv: readonly string[], env: NodeJS.ProcessEnv): Das
   }
 
   const baseUrl = e.TRUEFORGE_BASE_URL.replace(/\/+$/, '');
+  const writesAcknowledged =
+    e.DASHBOARD_TRUEFORGE_WRITE_ACK === TRUEFORGE_WRITE_ACKNOWLEDGEMENT;
   return {
     mode: flags.has('dev') ? 'dev' : 'production',
     source,
@@ -106,8 +113,8 @@ export function loadConfig(argv: readonly string[], env: NodeJS.ProcessEnv): Das
     pollMs: e.DASHBOARD_POLL_MS,
     allowedHosts,
     agentName: e.TRUEFORGE_AGENT_NAME,
-    decisionsEnabled: source === 'trueforge' && e.DASHBOARD_DECISIONS === 'on',
-    startRunsEnabled: source === 'trueforge' && e.DASHBOARD_START_RUNS === 'on',
+    decisionsEnabled: source === 'trueforge' && writesAcknowledged && e.DASHBOARD_DECISIONS === 'on',
+    startRunsEnabled: source === 'trueforge' && writesAcknowledged && e.DASHBOARD_START_RUNS === 'on',
     runbooksDir:
       e.RUNBOOKAI_RUNBOOKS_DIR ?? fileURLToPath(new URL('../../../runbooks', import.meta.url)),
     environment: e.DASHBOARD_ENVIRONMENT ?? null,
