@@ -32,7 +32,7 @@ const SUSPICIOUS_RULES: SuspiciousRule[] = [
   {
     id: "SECRET_REVELATION",
     description: "Attempts to reveal API keys or secret credentials",
-    regex: /\b(reveal|show|print|output|display|echo|leak)\s+(the\s+)?(api[_-]?key|credentials?|secrets?|tokens?|passwords?)\b/i,
+    regex: /\b(reveal|show|print|output|display|echo|leak)\s+(?:the\s+)?(api[_\-\s]?keys?|credentials?|secrets?|tokens?|passwords?)\b/i,
   },
   {
     id: "SECRET_EXFILTRATION",

@@ -13,7 +13,7 @@ const REDACTION_RULES: RedactionRule[] = [
   // Bearer tokens
   {
     name: "BEARER_TOKEN",
-    pattern: /Bearer\s+([A-Za-z0-9_\-\.]{12,})/gi,
+    pattern: /Bearer\s+([A-Za-z0-9_.-]{12,})/gi,
     replacement: "Bearer [REDACTED_TOKEN]",
   },
   // GitHub Personal Access Tokens and OAuth tokens
@@ -31,13 +31,13 @@ const REDACTION_RULES: RedactionRule[] = [
   // OpenAI API Key
   {
     name: "OPENAI_API_KEY",
-    pattern: /\b(sk-(?:proj-)?[A-Za-z0-9_\-]{20,})\b/g,
+    pattern: /\b(sk-(?:proj-)?[A-Za-z0-9_-]{20,})\b/g,
     replacement: "[REDACTED_OPENAI_KEY]",
   },
   // Daytona API Key
   {
     name: "DAYTONA_API_KEY",
-    pattern: /\b(daytona_[A-Za-z0-9_\-]{16,})\b/g,
+    pattern: /\b(daytona_[A-Za-z0-9_-]{16,})\b/g,
     replacement: "[REDACTED_DAYTONA_KEY]",
   },
   // Key=Value secrets in environment variables or logs
@@ -80,7 +80,16 @@ export function redactObject<T>(input: T): T {
   if (input !== null && typeof input === "object") {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(input)) {
-      result[key] = redactObject(value);
+      if (
+        /^(?:API_KEY|SECRET|PASSWORD|TOKEN|ACCESS_KEY|PRIVATE_KEY|apiKey|api_key|authToken|accessToken|secretKey)$/i.test(
+          key
+        ) &&
+        typeof value === "string"
+      ) {
+        result[key] = "[REDACTED_VALUE]";
+      } else {
+        result[key] = redactObject(value);
+      }
     }
     return result as unknown as T;
   }
