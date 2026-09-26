@@ -1,5 +1,3 @@
-console.log("RunbookAI core initialized.");
-
 export * from "./domain/action.js";
 export * from "./domain/blast-radius.js";
 export * from "./domain/evidence.js";
@@ -11,3 +9,4 @@ export * from "./security/untrusted-content.js";
 export * from "./security/redaction.js";
 export * from "./audit/timeline.js";
 export * from "./integrations/trueforge/types.js";
+export * from "./integrations/trueforge/approval-gate.js";
