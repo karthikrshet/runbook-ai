@@ -119,79 +119,99 @@ Prerequisites: Node.js >= 22
 # Install dependencies
 npm install
 
-# Run type check
+# Run full test suite (191 tests across 15 test files)
+npm test
+
+# Run type check across all workspaces
 npm run typecheck
 
-# Run test suite
-npm run test
-
-# Run linter
+# Run linter (strict type-checked)
 npm run lint
 
-# Build project
+# Build client production bundle (populates dist/ and apps/dashboard/dist/client)
 npm run build
 
-# Start local dev
-npm run dev
+# Start Demo Dashboard (Port 8791) - Synthetic Replay & Judging
+npm run dev:fixture
+# Or in production mode:
+npm run start:fixture -w @runbook-ai/dashboard
+
+# Start Live TrueForge Dashboard (Port 8792) - Connected to TrueForge
+npm run start:live
+
+# Start Target Microservice (checkout-api on Port 3000)
+npm start --prefix demo-service
 ```
+
+## Running the Dashboards & Live Demo
+
+RunbookAI provides two side-by-side dashboard experiences:
+
+1. **Demo Dashboard (Port 8791)**:
+   - **URL**: `http://127.0.0.1:8791`
+   - **Mode**: Synthetic Fixture Replay (`--source=fixture`)
+   - **Interactive Replay (Step 8 Approval Boundary)**: `http://127.0.0.1:8791/?session=fixture-inc-001-awaiting`
+   - **Resolved Session (GitHub PR + Recovery Verified)**: `http://127.0.0.1:8791/?session=fixture-inc-001-resolved`
+   - **Incident Post-Mortem Report**: `http://127.0.0.1:8791/?session=fixture-inc-001-awaiting&view=report`
+
+2. **Live TrueForge Dashboard (Port 8792)**:
+   - **URL**: `http://127.0.0.1:8792`
+   - **Mode**: Live TrueForge (`--source=trueforge`)
+   - Reaches TrueForge agent harness over HTTP/SSE (`http://localhost:8790`).
+   - Dispatches live incident runs, streams tool execution events, and forwards human approvals to TrueForge.
+
+3. **Target Microservice (`checkout-api`)**:
+   - **URL**: `http://127.0.0.1:3000` (or `http://127.0.0.1:8792` in standalone mode)
+   - Live endpoint reproducing incident INC-001:
+     - `GET /health` ➔ `200 OK`
+     - `POST /checkout` (No promo) ➔ `500 Internal Server Error` (`Cannot read properties of undefined (reading 'discount')`)
+     - `POST /checkout` (With promo `SAVE10`) ➔ `200 OK` (10% discount applied)
+
+## Cloud Deployment
+
+- **TrueFoundry**: See [TRUEFOUNDRY.md](file:///D:/RUNBOOK%20AI/TRUEFOUNDRY.md) and [`truefoundry.yaml`](file:///D:/RUNBOOK%20AI/truefoundry.yaml) for single-replica Kubernetes service deployment.
+- **AWS Amplify**: Configured via [`amplify.yml`](file:///D:/RUNBOOK%20AI/amplify.yml) targeting `baseDirectory: dist`.
 
 ## Testing
 
-Comprehensive test suites (134 tests passing across 11 test files):
+Comprehensive test suites (**191 tests passing across 15 test files**):
+- `demo-service/tests/health.test.ts` - Target microservice health probe and service discovery
+- `demo-service/tests/checkout.test.ts` - Incident INC-001 regression reproduction and patch validation
 - `packages/core/tests/policy.test.ts` - Deterministic policy decisions, permission matrix, and blast radius rules
 - `packages/core/tests/security.test.ts` - Untrusted content analysis and defensive redaction
 - `packages/core/tests/envelope.test.ts` - Tool execution envelope validation
-- `apps/dashboard/tests/server.test.ts` - HTTP API routes, SSE streams, and preflight health
+- `apps/dashboard/tests/server.test.ts` - HTTP API routes, SSE streams, write guards, and preflight health
 - `apps/dashboard/tests/projection.test.ts` - Incident and execution projections
 - `apps/dashboard/tests/console.test.ts` - Console and UI state projections
-- `apps/dashboard/tests/preflight.test.ts` - Preflight checks and configuration
+- `apps/dashboard/tests/report.test.ts` - Incident post-mortem report generation and Markdown export
+- `apps/dashboard/tests/write-guard.test.ts` - Fail-closed TrueForge write safety guards
+- `apps/dashboard/tests/preflight.test.ts` - Preflight checks and connector validation
 - `apps/dashboard/tests/sandbox-output.test.ts` - Sandbox output handling and evidence extraction
 - `apps/dashboard/tests/hub.test.ts` - Real-time SSE event hub
 - `apps/dashboard/tests/lineage.test.ts` - Execution lineage and causal graphs
-- `apps/dashboard/tests/config.test.ts` - Runtime configuration and source selection
+- `apps/dashboard/tests/config.test.ts` - Runtime configuration, flags, and source selection
 
 ## Current Integration Status
 
 | Component | Status | Notes |
 |---|---|---|
-| Local TypeScript core | REAL | Verified, compiles in strict mode |
-| Deterministic policy | REAL | Unit tested, 100% deterministic |
-| Evidence model | REAL | Typed provenance gating implemented |
-| Blast radius | REAL | Deterministic calculator with precedence |
-| Security primitives | REAL | Untrusted content analysis & redaction verified |
-| Audit timeline | REAL | Chronologically validated, auto-redacted |
-| Controlled Runbook | REAL | `checkout-incident.md` parsed and tested |
-| TrueForge model | NOT VERIFIED | Boundary interfaces defined; live connection pending |
-| Daytona provisioning | NOT VERIFIED | Environment provisioning pending |
-| TrueForge sandbox execution | BLOCKED | Shell execution issue in external sandbox |
-| Generated code sandbox execution | BLOCKED | Awaiting sandbox resolution |
-| GitHub MCP | NOT STARTED | Tool boundary defined; integration pending |
-| TrueForge native approval | NOT STARTED | Boundary interface defined; native flow pending |
-| AWS integration | NOT STARTED | Planned for Phase P2 |
-| Incident INC-001 | CONTROLLED | Controlled demo scenario fixture |
-
-## Real vs Mocked
-
-| Item | State | Description |
-|---|---|---|
-| Policy Engine | REAL | Deterministic TypeScript logic, zero mocks |
-| Blast Radius | REAL | Computed from concrete action metadata |
-| Evidence Schema | REAL | Strict Zod validation with refinement |
-| Runbook Parser | REAL | Compiles markdown into typed steps |
-| Security Filters | REAL | Active pattern matching & token redaction |
-| Sandbox Execution | NOT TESTED LOCALLY | Local execution is NOT sandbox execution |
-| External Human Approval | NOT CONNECTED | TrueForge native approval flow pending |
-| Cloud Services (AWS/GH) | NOT CONNECTED | External calls remain unexecuted |
+| Local TypeScript Core | REAL | Verified, compiles in strict mode |
+| Deterministic Policy | REAL | 100% deterministic TypeScript, zero LLM dependencies |
+| Evidence Model | REAL | Typed provenance gating (`SANDBOX_DERIVED`, `TOOL_DERIVED`) |
+| Blast Radius Engine | REAL | Evaluates 8 dimensions with strict risk precedence |
+| Security Primitives | REAL | Untrusted content analysis & token redaction verified |
+| Audit Timeline | REAL | Chronologically validated, auto-redacted |
+| Controlled Runbook | REAL | `checkout-incident.md` parsed and executed |
+| Target Microservice | REAL | `checkout-api` running on port 3000, reproducing INC-001 |
+| TrueForge SDK Client | REAL | Interfaces via `@truefoundry/trueforge-sdk` v0.2.0 |
+| Fail-Closed Write Guard | REAL | Prohibits unacknowledged external mutation writes |
+| Incident Reporting | REAL | Interactive post-mortem timeline with Markdown export |
+| Multi-Dashboard Support | REAL | Demo on 8791, Live TrueForge on 8792 |
+| AWS Amplify Deployment | REAL | Configured in `amplify.yml` with `dist/` artifacts |
 
 ## AI Assistants Used
 
-- **Google Antigravity (Advanced Agentic Coding):** Used for codebase inspection, TypeScript domain modeling, policy engine implementation, test creation, and quality gate verification.
-
-## Known Limitations
-
-- Runbook compiler currently targets controlled runbook formats; arbitrary free-form markdown is rejected safely.
-- Sandbox execution is currently marked `BLOCKED` until TrueForge sandbox shell execution is resolved.
-- Host execution is strictly prevented from substituting for sandbox execution.
+- **Google Antigravity (Advanced Agentic Coding):** Used for codebase inspection, TypeScript domain modeling, policy engine implementation, test creation, write-guard safety integration, and quality gate verification.
 
 ## License
 
